@@ -100,10 +100,8 @@ class AdminUserListItem(BaseModel):
     email: EmailStr
     is_active: bool
     is_admin: bool
-
-    class Config:
-        orm_mode = True
-        from_attributes = True
+    url_count: int
+    total_clicks: int
 
 class AdminUserBanRequest(BaseModel):
     is_active: bool
@@ -131,3 +129,13 @@ class CurrentUserResponse(BaseModel):
     class Config:
         orm_mode = True
         from_attributes = True
+
+class AdminDashboardStats(BaseModel):
+    total_users: int
+    active_users: int
+    banned_users: int
+    total_urls: int
+    active_urls: int
+    inactive_urls: int
+    protected_urls: int
+    total_clicks: int

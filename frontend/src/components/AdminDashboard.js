@@ -8,13 +8,13 @@ function AdminDashboard() {
   const [users, setUsers] = useState([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
-  
+
   const navigate = useNavigate();
 
   useEffect(() => {
     if (isTokenExpired()) {
       logout();
-      navigate("/login");
+      navigate("/auth");
       return;
     }
 
@@ -54,40 +54,57 @@ function AdminDashboard() {
     }
   }
 
-  async function invalidateUser(userId) {
-    const confirmed = window.confirm("Are you sure you want to invalidate this user?");
+  async function toggleUserBan(userId, currentStatus) {
+    const action = currentStatus ? "ban" : "unban";
+    const confirmed = window.confirm(`Are you sure you want to ${action} this user?`);
     if (!confirmed) return;
 
     try {
-      const response = await fetch(`http://localhost:8000/api/admin/users/${userId}/invalidate`, {
+      const response = await fetch(`http://localhost:8000/api/admin/ban-user/${userId}`, {
         method: "PATCH",
         headers: getAuthHeaders(),
+        body: JSON.stringify({ is_active: !currentStatus }),
       });
 
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.detail || "Failed to invalidate user");
+        throw new Error(data.detail || "Failed to update user status");
       }
 
+      setUsers((prevUsers) =>
+        prevUsers.map((user) =>
+          user.id === userId ? { ...user, is_active: !currentStatus } : user
+        )
+      );
+
+      // Banning cascades to the user's URLs on the backend, so refresh
+      // stats too (active/inactive URL counts will have shifted).
       await loadAdminData();
     } catch (err) {
-      setError(err.message || "Failed to invalidate user");
+      setError(err.message || "Failed to update user status");
     }
   }
 
   if (loading) {
-    return <div className="dashboard-container">Loading admin dashboard...</div>;
+    return <div className="dashboard-page">Loading admin dashboard...</div>;
   }
 
   return (
-    <div className="dashboard-container">
+    <div className="dashboard-page">
       <h1>Admin Dashboard</h1>
 
       {error && <p style={{ color: "red" }}>{error}</p>}
 
       {stats && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "16px", marginBottom: "32px" }}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(4, 1fr)",
+            gap: "16px",
+            marginBottom: "32px",
+          }}
+        >
           <div className="card"><h3>Total Users</h3><p>{stats.total_users}</p></div>
           <div className="card"><h3>Active Users</h3><p>{stats.active_users}</p></div>
           <div className="card"><h3>Banned Users</h3><p>{stats.banned_users}</p></div>
@@ -118,14 +135,14 @@ function AdminDashboard() {
             <tr key={user.id}>
               <td>{user.id}</td>
               <td>{user.email}</td>
-              <td>{user.is_active ? "Active" : "Invalidated"}</td>
+              <td>{user.is_active ? "Active" : "Banned"}</td>
               <td>{user.is_admin ? "Yes" : "No"}</td>
               <td>{user.url_count}</td>
               <td>{user.total_clicks}</td>
               <td>
-                {!user.is_admin && user.is_active && (
-                  <button onClick={() => invalidateUser(user.id)}>
-                    Invalidate
+                {!user.is_admin && (
+                  <button onClick={() => toggleUserBan(user.id, user.is_active)}>
+                    {user.is_active ? "Ban" : "Unban"}
                   </button>
                 )}
               </td>

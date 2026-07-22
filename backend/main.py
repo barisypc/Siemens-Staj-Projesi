@@ -555,8 +555,7 @@ def ban_user(
 
     if payload.is_active is False:
         db.query(models.URL).filter(models.URL.user_id == user_id).update(
-            {"is_active": False},
-            synchronize_session=False
+            {"is_active": False}, synchronize_session=False
         )
 
     db.commit()
@@ -565,10 +564,27 @@ def ban_user(
     return {"message": "User status updated successfully"}
 
 
-@app.get("/api/admin/list-all-users", response_model=list[schemas.AdminUserListItem])
-def list_all_users(db: Session = Depends(get_db),current_admin: models.User = Depends(get_current_admin)):
+
+@app.get("/api/admin/users", response_model=list[schemas.AdminUserListItem])
+def list_all_users(
+    db: Session = Depends(get_db),
+    current_admin: models.User = Depends(get_current_admin)
+):
     users = db.query(models.User).all()
-    return users
+    result = []
+    for user in users:
+        url_count = db.query(func.count(models.URL.id)).filter(models.URL.user_id == user.id).scalar()
+        total_clicks = db.query(func.coalesce(func.sum(models.URL.clicks), 0)).filter(models.URL.user_id == user.id).scalar()
+        result.append({
+            "id": user.id,
+            "username": user.username,
+            "email": user.email,
+            "is_active": user.is_active,
+            "is_admin": user.is_admin,
+            "url_count": url_count,
+            "total_clicks": total_clicks,
+        })
+    return result
 
 
 
@@ -613,3 +629,29 @@ def get_me(
 
     return user
 #User URLlerini görmek için usera basınca yan ekranda onların detayları gözükür.
+
+@app.get("/api/admin/dashboard", response_model=schemas.AdminDashboardStats)
+def admin_dashboard(
+    db: Session = Depends(get_db),
+    current_admin: models.User = Depends(get_current_admin)
+):
+    total_users = db.query(func.count(models.User.id)).scalar()
+    active_users = db.query(func.count(models.User.id)).filter(models.User.is_active == True).scalar()
+    banned_users = total_users - active_users
+
+    total_urls = db.query(func.count(models.URL.id)).scalar()
+    active_urls = db.query(func.count(models.URL.id)).filter(models.URL.is_active == True).scalar()
+    inactive_urls = total_urls - active_urls
+    protected_urls = db.query(func.count(models.URL.id)).filter(models.URL.password_hash.isnot(None)).scalar()
+    total_clicks = db.query(func.coalesce(func.sum(models.URL.clicks), 0)).scalar()
+
+    return {
+        "total_users": total_users,
+        "active_users": active_users,
+        "banned_users": banned_users,
+        "total_urls": total_urls,
+        "active_urls": active_urls,
+        "inactive_urls": inactive_urls,
+        "protected_urls": protected_urls,
+        "total_clicks": total_clicks,
+    }
