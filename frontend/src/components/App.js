@@ -5,6 +5,7 @@ import Dashboard from "./Dashboard";
 import { ROUTES } from "../routes";
 import ProtectedRoute from "../routes/ProtectedRoute";
 import PublicRoute from "../routes/PublicRoute";
+import AdminRoute from "../routes/AdminRoute.js";
 import UrlPassword from "./UrlPassword"
 import AdminDashboard from "./AdminDashboard";
 
@@ -34,9 +35,19 @@ function App() {
         }
       />
 
-      <Route path="*" element={<Navigate to={ROUTES.AUTH} replace />} />
+      <Route
+        path={ROUTES.ADMIN}
+        element={
+          <ProtectedRoute>
+            <AdminRoute>
+              <AdminDashboard />
+            </AdminRoute>
+          </ProtectedRoute>
+        }
+      />
+
       <Route path="/protected/:shortCode" element={<UrlPassword />} />
-      <Route path="/admin" element={<AdminDashboard />} />
+      <Route path="*" element={<Navigate to={ROUTES.AUTH} replace />} />
     </Routes>
   );
 }

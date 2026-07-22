@@ -9,4 +9,6 @@ export const ROUTES = {
   APP: "/app",
   HOME: "/",
   DASHBOARD: "/dashboard",
+  ADMIN: "/admin",
+
 };
