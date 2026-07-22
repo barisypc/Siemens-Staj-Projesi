@@ -1,21 +1,37 @@
-from pydantic import BaseModel, HttpUrl
+from pydantic import BaseModel, HttpUrl, EmailStr
+from typing import Optional, List
+from datetime import datetime
 
-# This is the schema for the URL model. It defines the structure of the data that will be used in the application. The URLCreate class inherits from BaseModel and has a single attribute long_url, which is of type HttpUrl. This ensures that any data passed to this model will be validated as a proper URL.
-# This py file only does the talk between user, database, functions etc. Its like a middleman. 
 class URLCreate(BaseModel):
     original_url: HttpUrl
+    custom_code: Optional[str] = None
+    qr_code: Optional[bool] = False
+    expiration_minutes: Optional[int] = None
+    count_limit: Optional[int] = None
+    password: Optional[str] = None
 
 class ShortenResponse(BaseModel):
     short_url: str
+    qr_code_image: Optional[str] = None
 
 class URLResponse(BaseModel):
     id: int
-    original_url: HttpUrl
+    original_url: str
     short_url: str
     clicks: int
+    is_active: bool
+    expires_at: Optional[datetime] = None
+    click_limit: Optional[int] = None
 
     class Config:
         orm_mode = True
+        from_attributes = True
+
+class URLValidationUpdate(BaseModel):
+    is_active: bool
+
+class URLAccessRequest(BaseModel):
+    password: Optional[str] = None
 
 class UserCreate(BaseModel):
     username: str
@@ -25,7 +41,6 @@ class UserCreate(BaseModel):
 class Userlogin(BaseModel):
     email: str
     password: str
-    username: str
 
 class UserResponse(BaseModel):
     id: int
@@ -34,6 +49,7 @@ class UserResponse(BaseModel):
 
     class Config:
         orm_mode = True
+        from_attributes = True
 
 class TokenResponse(BaseModel):
     access_token: str
@@ -42,3 +58,76 @@ class TokenResponse(BaseModel):
 class TokenData(BaseModel):
     user_id: int
     username: str
+
+#This structure allows data to be usable in many scenarios.
+class StatItem(BaseModel):
+    label: str
+    count: int
+
+class RecentClickItem(BaseModel):
+    timestamp: str
+    count: int
+
+class URLStatisticsResponse(BaseModel):
+    url_id: int
+    short_url: str
+    original_url: str
+    total_clicks: int
+    by_platform: List[StatItem]
+    by_browser: List[StatItem]
+    by_country: List[StatItem]
+    recent_clicks: List[RecentClickItem]
+
+
+class URLPasswordRequest(BaseModel):
+    password: str
+
+class URLAccessResponse(BaseModel):
+    message: str
+    original_url: str
+
+
+class UserDelete(BaseModel):
+    user_id: int
+
+
+class AdminMessageResponse(BaseModel):
+    message: str
+
+class AdminUserListItem(BaseModel):
+    id: int
+    username: str
+    email: EmailStr
+    is_active: bool
+    is_admin: bool
+
+    class Config:
+        orm_mode = True
+        from_attributes = True
+
+class AdminUserBanRequest(BaseModel):
+    is_active: bool
+
+class AdminUserURLItem(BaseModel):
+    id: int
+    original_url: str
+    short_url: str
+    clicks: int
+    is_active: bool
+    expires_at: Optional[datetime] = None
+    click_limit: Optional[int] = None
+
+    class Config:
+        orm_mode = True
+        from_attributes = True
+
+class CurrentUserResponse(BaseModel):
+    id: int
+    username: str
+    email: str
+    is_active: bool
+    is_admin: bool
+
+    class Config:
+        orm_mode = True
+        from_attributes = True

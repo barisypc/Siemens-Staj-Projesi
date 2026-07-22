@@ -1,0 +1,131 @@
+/* App.css - global styles for the Auth UI */
+
+/* Page background and centering */
+body, #root {
+  height: 100%;
+}
+
+* {
+  box-sizing: border-box;
+  font-family: 'Comic Sans MS', 'Comic Sans', cursive;
+}
+
+body {
+  margin: 0;
+  background: linear-gradient(135deg, #f6f8fb 0%, #e9f0ff 60%, #f8fbff 100%);
+  color: #1f2937;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.auth-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+}
+
+.auth-card {
+  width: 100%;
+  max-width: 420px;
+  background: #ffffff;
+  border-radius: 14px;
+  padding: 28px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.08);
+  border: 1px solid #e5e7eb;
+}
+
+.auth-title {
+  text-align: center;
+  margin: 0 0 16px;
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: #111827;
+}
+
+.auth-form {
+  display: grid;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.auth-field {
+  display: block;
+}
+
+.auth-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 12px 14px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 1rem;
+  background: #fff;
+  transition: border-color .2s, box-shadow .2s;
+}
+
+.auth-input:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 4px rgba(74, 144, 226, 0.15);
+}
+
+.auth-button {
+  width: 100%;
+  padding: 12px;
+  border-radius: 8px;
+  border: none;
+  background: #2563eb;
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform .02s ease, box-shadow .2s ease;
+}
+.auth-button:hover {
+  filter: brightness(1.03);
+}
+.auth-button:active {
+  transform: translateY(1px);
+}
+
+.auth-message {
+  margin: 8px 0 0;
+  color: #16a34a; /* green */
+  text-align: center;
+}
+.auth-error {
+  margin: 8px 0 0;
+  color: #dc2626; /* red */
+  text-align: center;
+}
+
+.auth-toggle {
+  text-align: center;
+  margin-top: 12px;
+  color: #374151;
+}
+.auth-toggle-btn {
+  background: none;
+  border: none;
+  color: #1d4ed8;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0;
+  margin-left: 6px;
+}
+@media (prefers-color-scheme: dark) {
+  .auth-card {
+    background: #1f1f1f;
+    border-color: #2a2a2a;
+    box-shadow: 0 8px 20px rgba(0,0,0,.6);
+  }
+  .auth-title { color: #e5e7eb; }
+  .auth-input { background: #2a2a2a; color: #e5e7eb; border-color: #3a3a3a; }
+  .auth-input:focus { border-color: #6ea8ff; box-shadow: 0 0 0 4px rgba(110,168,255,.15); }
+  .auth-button { background: linear-gradient(135deg, #4f8af6, #1e57c4); }
+  .auth-message { color: #86efac; }
+  .auth-error { color: #f87171; }
+  .auth-toggle { color: #d1d5db; }
+}

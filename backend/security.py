@@ -15,7 +15,7 @@ def verify_password(plain_password, hashed_password):
 
 def create_Token(data):
     key = "dunyaninengizlianahtari"
-    exp = datetime.utcnow() + timedelta(seconds = 300)
+    exp = datetime.utcnow() + timedelta(seconds = 600)
     payload = {**data, "exp": exp} 
     created_token = jwt.encode(payload, key, algorithm="HS256")
     return created_token
@@ -24,10 +24,9 @@ def create_Token(data):
 def verify_Token(token):
     key = "dunyaninengizlianahtari"
     try:
-        verified_token = jwt.decode(token, key, algorithm="HS256")
+        verified_token = jwt.decode(token, key, algorithms=["HS256"])
         return verified_token
     except jwt.ExpiredSignatureError:
-        print("Expired session. Please log in again!")
+        return None
     except jwt.InvalidTokenError:
-        print("Invalid token. Please log in again!")
-
+        return None

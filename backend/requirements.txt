@@ -3,3 +3,7 @@ uvicorn
 psycopg2-binary
 sqlalchemy
 PyJWT
+qrcode
+Pillow
+user-agents
+email-validator
