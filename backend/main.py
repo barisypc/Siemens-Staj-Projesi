@@ -7,6 +7,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime, timedelta
 from io import BytesIO
 from user_agents import parse
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 
 import base64
@@ -25,6 +28,10 @@ from database import SessionLocal, engine, Base
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
 Base.metadata.create_all(bind=engine)
 app = FastAPI()
+
+limiter = Limiter(key_func=get_remote_address, default_limits=["200/hour"])
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(
     CORSMiddleware,
@@ -89,7 +96,8 @@ def generate_qr_base64(data: str) -> str:
     return f"data:image/png;base64,{img_base64}"
 
 @app.post("/signup/", response_model=schemas.UserResponse)
-def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
+@limiter.limit("4/minute")
+def create_user(request: Request, user: schemas.UserCreate, db: Session = Depends(get_db)):
     email_pattern = r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,20}$"
     if not re.match(email_pattern, user.email):
         raise HTTPException(status_code=400, detail="Invalid mail format.")
@@ -120,7 +128,8 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
     return new_user
 
 @app.post("/login/", response_model=schemas.TokenResponse)
-def login(user: schemas.Userlogin, response: Response, db: Session = Depends(get_db)):
+@limiter.limit("5/minute")
+def login(request: Request, user: schemas.Userlogin, response: Response, db: Session = Depends(get_db)):
     db_user = db.query(models.User).filter(models.User.email == user.email).first()
 
     if not db_user or not security.verify_password(user.password, db_user.hashed_password):
@@ -136,7 +145,9 @@ def login(user: schemas.Userlogin, response: Response, db: Session = Depends(get
 
 
 @app.post("/change-password/", response_model=schemas.AdminMessageResponse)
-def change_password(payload: schemas.ChangePasswordRequest, db: Session = Depends(get_db)):
+@limiter.limit("3/minute")
+
+def change_password(request: Request ,payload: schemas.ChangePasswordRequest, db: Session = Depends(get_db)):
     db_user = db.query(models.User).filter(models.User.email == payload.email).first()
 
     if not db_user or not security.verify_password(payload.current_password, db_user.hashed_password):
@@ -153,6 +164,7 @@ def change_password(payload: schemas.ChangePasswordRequest, db: Session = Depend
 
 
 @app.post("/shorten", response_model=schemas.ShortenResponse)
+@limiter.limit("10/minute")
 def shorten_url(
     request: Request,
     url: schemas.URLCreate,
