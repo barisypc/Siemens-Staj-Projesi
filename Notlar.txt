@@ -1,0 +1,6 @@
+Database bilgileri:
+      POSTGRES_DB: deneme
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: 112131
+
+sss

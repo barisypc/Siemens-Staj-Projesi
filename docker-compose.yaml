@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+
+  # 🗄️ Veritabanı
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: deneme
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: 112131
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  # ⚡ Backend (FastAPI)
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://user:112131@db:5432/deneme
+    depends_on:
+      - db
+    volumes:
+      - ./backend:/app
+
+  # 🎨 Frontend (React)
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules 
+    environment:
+      - CHOKIDAR_USEPOLLING=true    # ← Add this!
+      - WATCHPACK_POLLING=true     # ← ADD THIS LINE! Protects node_modules inside the container
+
+
+volumes:
+  postgres_data:
