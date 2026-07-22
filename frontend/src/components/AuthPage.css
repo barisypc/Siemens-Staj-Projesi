@@ -44,6 +44,13 @@ body {
   color: #111827;
 }
 
+.auth-subtitle {
+  text-align: center;
+  margin: 0 0 16px;
+  color: #6b7280;
+  font-size: 0.95rem;
+}
+
 .auth-form {
   display: grid;
   gap: 12px;
@@ -89,6 +96,10 @@ body {
 .auth-button:active {
   transform: translateY(1px);
 }
+.auth-button:disabled {
+  background: #93c5fd;
+  cursor: not-allowed;
+}
 
 .auth-message {
   margin: 8px 0 0;
@@ -99,6 +110,26 @@ body {
   margin: 8px 0 0;
   color: #dc2626; /* red */
   text-align: center;
+}
+
+.auth-lockout-warning {
+  margin-top: 16px;
+  padding: 12px 14px;
+  background: #fef3c7;
+  border: 1px solid #fde68a;
+  border-radius: 8px;
+  text-align: center;
+}
+
+.auth-lockout-warning p {
+  margin: 0 0 8px;
+  color: #92400e;
+  font-size: 0.9rem;
+}
+
+.auth-lockout-warning .auth-toggle-btn {
+  margin-left: 0;
+  font-weight: 700;
 }
 
 .auth-toggle {
@@ -115,6 +146,28 @@ body {
   padding: 0;
   margin-left: 6px;
 }
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 1000;
+}
+
+.modal-card {
+  width: 100%;
+  max-width: 400px;
+  text-align: center;
+}
+
+.modal-card .auth-button {
+  margin-top: 8px;
+}
+
 @media (prefers-color-scheme: dark) {
   .auth-card {
     background: #1f1f1f;
@@ -122,10 +175,16 @@ body {
     box-shadow: 0 8px 20px rgba(0,0,0,.6);
   }
   .auth-title { color: #e5e7eb; }
+  .auth-subtitle { color: #9ca3af; }
   .auth-input { background: #2a2a2a; color: #e5e7eb; border-color: #3a3a3a; }
   .auth-input:focus { border-color: #6ea8ff; box-shadow: 0 0 0 4px rgba(110,168,255,.15); }
   .auth-button { background: linear-gradient(135deg, #4f8af6, #1e57c4); }
   .auth-message { color: #86efac; }
   .auth-error { color: #f87171; }
   .auth-toggle { color: #d1d5db; }
+  .auth-lockout-warning {
+    background: #3f2d0a;
+    border-color: #5c4310;
+  }
+  .auth-lockout-warning p { color: #fcd34d; }
 }

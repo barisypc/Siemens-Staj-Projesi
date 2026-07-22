@@ -139,3 +139,9 @@ class AdminDashboardStats(BaseModel):
     inactive_urls: int
     protected_urls: int
     total_clicks: int
+
+
+class ChangePasswordRequest(BaseModel):
+    email: str
+    current_password: str
+    new_password: str

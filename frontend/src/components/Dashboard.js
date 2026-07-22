@@ -55,6 +55,18 @@ function Dashboard() {
 
   const navigate = useNavigate();
 
+  // Central handler for "your account was banned mid-session" — any fetch
+  // that comes back 403 from a now-inactive account routes through here so
+  // the user gets logged out and bounced to /auth with a clear message,
+  // instead of being left stuck on the dashboard staring at a generic error.
+  const handleBanDetected = (message) => {
+    logout();
+    navigate("/auth", {
+      replace: true,
+      state: { message: message || "Your account has been banned." },
+    });
+  };
+
   const fetchCurrentUser = async () => {
     try {
       const response = await fetch("http://localhost:8000/api/me", {
@@ -63,6 +75,11 @@ function Dashboard() {
       });
 
       const data = await response.json();
+
+      if (response.status === 403) {
+        handleBanDetected(data.detail);
+        return;
+      }
 
       if (!response.ok) {
         throw new Error(data.detail || "Failed to fetch current user");
@@ -83,6 +100,12 @@ function Dashboard() {
         method: "GET",
         headers: getAuthHeaders(),
       });
+
+      if (response.status === 403) {
+        const data = await response.json().catch(() => ({}));
+        handleBanDetected(data.detail);
+        return;
+      }
 
       if (!response.ok) {
         throw new Error("Failed to fetch URLs");
@@ -202,6 +225,11 @@ function Dashboard() {
 
       const data = await response.json();
 
+      if (response.status === 403) {
+        handleBanDetected(data.detail);
+        return;
+      }
+
       if (!response.ok) {
         throw new Error(data.detail || "Failed to shorten URL");
       }
@@ -260,6 +288,11 @@ function Dashboard() {
 
       const data = await response.json();
 
+      if (response.status === 403) {
+        handleBanDetected(data.detail);
+        return;
+      }
+
       if (!response.ok) {
         throw new Error(data.detail || "Failed to delete URL");
       }
@@ -291,6 +324,11 @@ function Dashboard() {
 
       const data = await response.json();
 
+      if (response.status === 403) {
+        handleBanDetected(data.detail);
+        return;
+      }
+
       if (!response.ok) {
         throw new Error(data.detail || "Failed to update validation status");
       }
@@ -316,6 +354,11 @@ function Dashboard() {
       });
 
       const data = await response.json();
+
+      if (response.status === 403) {
+        handleBanDetected(data.detail);
+        return;
+      }
 
       if (!response.ok) {
         throw new Error(data.detail || "Failed to show statistics.");

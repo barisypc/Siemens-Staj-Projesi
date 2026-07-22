@@ -45,6 +45,28 @@ export async function login(email, password) {
   return data;
 }
 
+export async function changePassword(email, currentPassword, newPassword) {
+  const response = await fetch(`${API_BASE}/change-password/`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      email,
+      current_password: currentPassword,
+      new_password: newPassword
+    })
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data.detail || "Failed to change password");
+  }
+
+  return data;
+}
+
 export function getToken() {
   return localStorage.getItem("token");
 }

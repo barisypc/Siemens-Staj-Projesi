@@ -50,13 +50,76 @@
   margin-bottom: 14px;
 }
 
-.user-ban-action {
+.user-admin-actions {
   margin-top: 4px;
 }
 
 .no-selection-note {
   color: #6b7280;
   font-size: 14px;
+}
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 1000;
+}
+
+.modal-card {
+  width: 100%;
+  max-width: 420px;
+}
+
+.modal-title {
+  margin: 0 0 10px;
+  font-size: 20px;
+  color: #1f2937;
+}
+
+.modal-text {
+  margin: 0 0 12px;
+  font-size: 14px;
+  color: #374151;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.modal-cancel-button {
+  padding: 10px 16px;
+  background: #e5e7eb;
+  color: #374151;
+  border: none;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: 0.2s ease;
+}
+
+.modal-cancel-button:hover {
+  background: #d1d5db;
+}
+
+.modal-cancel-button:disabled {
+  background: #f3f4f6;
+  color: #9ca3af;
+  cursor: not-allowed;
+}
+
+.modal-card .delete-button:disabled {
+  background: #fca5a5;
+  cursor: not-allowed;
+  transform: none;
 }
 
 @media (max-width: 900px) {

@@ -126,6 +126,10 @@ def login(user: schemas.Userlogin, response: Response, db: Session = Depends(get
     if not db_user or not security.verify_password(user.password, db_user.hashed_password):
         raise HTTPException(status_code=400, detail="Incorrect email or password")
 
+    if not db_user.is_active:
+        raise HTTPException(status_code=403, detail="Your account has been banned.")
+
+
     token_data = {"user_id": db_user.id, "username": db_user.username}
     access_token = security.create_Token(token_data)
 
@@ -139,6 +143,13 @@ def shorten_url(
     current_user: dict = Depends(get_current_user)
 ):
     user_id = current_user["user_id"]
+
+    user_entry = db.query(models.User).filter(models.User.id == user_id).first()
+
+    if not user_entry or not user_entry.is_active:
+        raise HTTPException(status_code=403, detail="Your account has been banned.")
+
+
     base_url = str(request.base_url).rstrip("/")
 
     url_pattern = r"^https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,20}\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*)$"
@@ -212,6 +223,7 @@ def shorten_url(
         is_active=True
     )
 
+
     db.add(new_url)
     db.commit()
     db.refresh(new_url)
@@ -227,6 +239,10 @@ def redirect_url(request: Request, short_code: str, db: Session = Depends(get_db
 
     if not url_entry:
         raise HTTPException(status_code=404, detail="Short URL not found")
+
+    if not url_entry.owner.is_active:
+        raise HTTPException(status_code=403, detail="This links owner is banned.")
+
 
     if not url_entry.is_active:
         raise HTTPException(status_code=403, detail="This short URL is inactive")
@@ -552,12 +568,6 @@ def ban_user(
         raise HTTPException(status_code=400, detail="Cannot ban another admin")
 
     user_entry.is_active = payload.is_active
-
-    if payload.is_active is False:
-        db.query(models.URL).filter(models.URL.user_id == user_id).update(
-            {"is_active": False}, synchronize_session=False
-        )
-
     db.commit()
     db.refresh(user_entry)
 
@@ -655,3 +665,19 @@ def admin_dashboard(
         "protected_urls": protected_urls,
         "total_clicks": total_clicks,
     }
+
+@app.post("/change-password/", response_model=schemas.AdminMessageResponse)
+def change_password(payload: schemas.ChangePasswordRequest, db: Session = Depends(get_db)):
+    db_user = db.query(models.User).filter(models.User.email == payload.email).first()
+
+    if not db_user or not security.verify_password(payload.current_password, db_user.hashed_password):
+        raise HTTPException(status_code=400, detail="Incorrect email or current password")
+
+    password_pattern = r"^(?=.*[0-9])(?=.*[a-z])(?=.*[A-Z])(?=.*[.@#$%^&+=])(?=\S+$).{4,20}$"
+    if not re.match(password_pattern, payload.new_password):
+        raise HTTPException(status_code=400, detail="Invalid password format.")
+
+    db_user.hashed_password = security.hash_password(payload.new_password)
+    db.commit()
+
+    return {"message": "Password updated successfully. Please log in with your new password."}

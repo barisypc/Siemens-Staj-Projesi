@@ -16,6 +16,10 @@ function AdminDashboard() {
   const [urlsLoading, setUrlsLoading] = useState(false);
   const [urlsError, setUrlsError] = useState("");
 
+  const [userToDelete, setUserToDelete] = useState(null);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [deleteInFlight, setDeleteInFlight] = useState(false);
+
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -131,6 +135,53 @@ function AdminDashboard() {
       }
     } catch (err) {
       setError(err.message || "Failed to update user status");
+    }
+  }
+
+  function requestDeleteUser(user) {
+    setUserToDelete(user);
+    setDeleteConfirmText("");
+  }
+
+  function cancelDeleteUser() {
+    setUserToDelete(null);
+    setDeleteConfirmText("");
+  }
+
+  async function confirmDeleteUser() {
+    if (!userToDelete) return;
+
+    const userId = userToDelete.id;
+
+    try {
+      setDeleteInFlight(true);
+
+      const response = await fetch(`http://localhost:8000/api/admin/delete-user/${userId}`, {
+        method: "DELETE",
+        headers: getAuthHeaders(),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.detail || "Failed to delete user");
+      }
+
+      setUsers((prev) => prev.filter((user) => user.id !== userId));
+
+      if (selectedUserId === userId) {
+        setSelectedUserId(null);
+        setUserUrls([]);
+        setUrlsError("");
+      }
+
+      await loadAdminData();
+    } catch (err) {
+      setError(err.message || "Failed to delete user");
+    } finally {
+      setDeleteInFlight(false);
+      setUserToDelete(null);
+      setDeleteConfirmText("");
     }
   }
 
@@ -260,9 +311,9 @@ function AdminDashboard() {
                         </div>
 
                         {user.is_admin ? (
-                          <p className="details-note">Admin accounts can't be banned.</p>
+                          <p className="details-note">Admin accounts can't be banned or deleted.</p>
                         ) : (
-                          <div className="user-ban-action">
+                          <div className="action-buttons user-admin-actions">
                             <button
                               type="button"
                               className={`validate-button ${
@@ -274,6 +325,17 @@ function AdminDashboard() {
                               }}
                             >
                               {user.is_active ? "Ban User" : "Unban User"}
+                            </button>
+
+                            <button
+                              type="button"
+                              className="delete-button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                requestDeleteUser(user);
+                              }}
+                            >
+                              Delete User
                             </button>
                           </div>
                         )}
@@ -356,6 +418,52 @@ function AdminDashboard() {
           )}
         </div>
       </div>
+
+      {userToDelete && (
+        <div className="modal-overlay">
+          <div className="card modal-card">
+            <h3 className="modal-title">Delete {userToDelete.email}?</h3>
+
+            <p className="modal-text">
+              This permanently deletes this user and all of their URLs. This
+              action cannot be undone.
+            </p>
+
+            <p className="modal-text">
+              Type <strong>{userToDelete.email}</strong> below to confirm.
+            </p>
+
+            <input
+              type="text"
+              className="input"
+              value={deleteConfirmText}
+              onChange={(e) => setDeleteConfirmText(e.target.value)}
+              placeholder="Enter email to confirm"
+              autoFocus
+            />
+
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="modal-cancel-button"
+                onClick={cancelDeleteUser}
+                disabled={deleteInFlight}
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                className="delete-button"
+                disabled={deleteConfirmText !== userToDelete.email || deleteInFlight}
+                onClick={confirmDeleteUser}
+              >
+                {deleteInFlight ? "Deleting..." : "Delete User"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
