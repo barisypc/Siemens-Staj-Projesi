@@ -1,0 +1,80 @@
+.admin-header-card {
+  margin-bottom: 24px;
+}
+
+.admin-header-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+
+.admin-header-text {
+  flex: 1;
+  min-width: 240px;
+}
+
+.back-to-dashboard-button {
+  padding: 10px 16px;
+  background: #0f172a;
+  color: white;
+  border: none;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: 0.2s ease;
+  white-space: nowrap;
+}
+
+.back-to-dashboard-button:hover {
+  background: #1e293b;
+}
+
+/* Column layouts for the two admin tables, reusing .list-header /
+   .url-entry-header from Dashboard.css for identical look & feel. */
+.list-header.users-grid,
+.url-entry-header.users-grid {
+  grid-template-columns: 60px 2fr 90px 70px 40px;
+}
+
+.list-header.user-urls-grid,
+.url-entry-header.user-urls-grid {
+  grid-template-columns: 60px 2fr 2fr 80px 90px;
+}
+
+.stats-grid.two-col {
+  grid-template-columns: repeat(2, 1fr);
+  margin-bottom: 14px;
+}
+
+.user-ban-action {
+  margin-top: 4px;
+}
+
+.no-selection-note {
+  color: #6b7280;
+  font-size: 14px;
+}
+
+@media (max-width: 900px) {
+  .admin-header-top {
+    flex-direction: column;
+  }
+
+  .back-to-dashboard-button {
+    align-self: flex-start;
+  }
+
+  .list-header.users-grid,
+  .list-header.user-urls-grid {
+    display: none;
+  }
+
+  .url-entry-header.users-grid,
+  .url-entry-header.user-urls-grid {
+    grid-template-columns: 1fr;
+  }
+}

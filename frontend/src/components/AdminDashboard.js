@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from "react";
 import { getAuthHeaders, logout, isTokenExpired } from "../services/auth";
 import { useNavigate } from "react-router-dom";
+import { ROUTES } from "../routes";
 import "./Dashboard.css";
+import "./AdminDashboard.css";
 
 function AdminDashboard() {
   const [stats, setStats] = useState(null);
@@ -9,12 +11,17 @@ function AdminDashboard() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
 
+  const [selectedUserId, setSelectedUserId] = useState(null);
+  const [userUrls, setUserUrls] = useState([]);
+  const [urlsLoading, setUrlsLoading] = useState(false);
+  const [urlsError, setUrlsError] = useState("");
+
   const navigate = useNavigate();
 
   useEffect(() => {
     if (isTokenExpired()) {
       logout();
-      navigate("/auth");
+      navigate(ROUTES.AUTH);
       return;
     }
 
@@ -54,6 +61,43 @@ function AdminDashboard() {
     }
   }
 
+  async function fetchUserUrls(userId) {
+    try {
+      setUrlsLoading(true);
+      setUrlsError("");
+
+      const response = await fetch(`http://localhost:8000/api/admin/user-urls/${userId}`, {
+        headers: getAuthHeaders(),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.detail || "Failed to load user's URLs");
+      }
+
+      setUserUrls(data);
+    } catch (err) {
+      setUrlsError(err.message || "Failed to load user's URLs");
+      setUserUrls([]);
+    } finally {
+      setUrlsLoading(false);
+    }
+  }
+
+  function selectUser(userId) {
+    if (selectedUserId === userId) {
+      // Clicking the same user again collapses the row and clears the panel.
+      setSelectedUserId(null);
+      setUserUrls([]);
+      setUrlsError("");
+      return;
+    }
+
+    setSelectedUserId(userId);
+    fetchUserUrls(userId);
+  }
+
   async function toggleUserBan(userId, currentStatus) {
     const action = currentStatus ? "ban" : "unban";
     const confirmed = window.confirm(`Are you sure you want to ${action} this user?`);
@@ -78,13 +122,19 @@ function AdminDashboard() {
         )
       );
 
-      // Banning cascades to the user's URLs on the backend, so refresh
-      // stats too (active/inactive URL counts will have shifted).
+      // Banning cascades to the user's URLs on the backend, so refresh the
+      // top stats, and if that user's URL list is open on the right, refresh it too.
       await loadAdminData();
+
+      if (selectedUserId === userId) {
+        await fetchUserUrls(userId);
+      }
     } catch (err) {
       setError(err.message || "Failed to update user status");
     }
   }
+
+  const selectedUser = users.find((user) => user.id === selectedUserId) || null;
 
   if (loading) {
     return <div className="dashboard-page">Loading admin dashboard...</div>;
@@ -92,64 +142,220 @@ function AdminDashboard() {
 
   return (
     <div className="dashboard-page">
-      <h1>Admin Dashboard</h1>
+      <div className="card admin-header-card">
+        <div className="admin-header-top">
+          <div className="admin-header-text">
+            <h1 className="title">Admin Dashboard</h1>
+            <p className="subtitle">Monitor activity and manage users.</p>
+          </div>
 
-      {error && <p style={{ color: "red" }}>{error}</p>}
-
-      {stats && (
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(4, 1fr)",
-            gap: "16px",
-            marginBottom: "32px",
-          }}
-        >
-          <div className="card"><h3>Total Users</h3><p>{stats.total_users}</p></div>
-          <div className="card"><h3>Active Users</h3><p>{stats.active_users}</p></div>
-          <div className="card"><h3>Banned Users</h3><p>{stats.banned_users}</p></div>
-          <div className="card"><h3>Total URLs</h3><p>{stats.total_urls}</p></div>
-          <div className="card"><h3>Active URLs</h3><p>{stats.active_urls}</p></div>
-          <div className="card"><h3>Inactive URLs</h3><p>{stats.inactive_urls}</p></div>
-          <div className="card"><h3>Protected URLs</h3><p>{stats.protected_urls}</p></div>
-          <div className="card"><h3>Total Clicks</h3><p>{stats.total_clicks}</p></div>
+          <button
+            type="button"
+            className="back-to-dashboard-button"
+            onClick={() => navigate(ROUTES.DASHBOARD)}
+          >
+            ← Back to Dashboard
+          </button>
         </div>
-      )}
 
-      <h2>Users</h2>
+        {error && <p className="error">{error}</p>}
 
-      <table style={{ width: "100%", borderCollapse: "collapse", backgroundColor: "#fff" }}>
-        <thead>
-          <tr>
-            <th>ID</th>
-            <th>Email</th>
-            <th>Status</th>
-            <th>Admin</th>
-            <th>URL Count</th>
-            <th>Total Clicks</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {users.map((user) => (
-            <tr key={user.id}>
-              <td>{user.id}</td>
-              <td>{user.email}</td>
-              <td>{user.is_active ? "Active" : "Banned"}</td>
-              <td>{user.is_admin ? "Yes" : "No"}</td>
-              <td>{user.url_count}</td>
-              <td>{user.total_clicks}</td>
-              <td>
-                {!user.is_admin && (
-                  <button onClick={() => toggleUserBan(user.id, user.is_active)}>
-                    {user.is_active ? "Ban" : "Unban"}
-                  </button>
-                )}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+        {stats && (
+          <div className="stats-grid">
+            <div className="stat-card">
+              <div className="stat-label">Total Users</div>
+              <div className="stat-value">{stats.total_users}</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-label">Active Users</div>
+              <div className="stat-value">{stats.active_users}</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-label">Banned Users</div>
+              <div className="stat-value">{stats.banned_users}</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-label">Total URLs</div>
+              <div className="stat-value">{stats.total_urls}</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-label">Active URLs</div>
+              <div className="stat-value">{stats.active_urls}</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-label">Inactive URLs</div>
+              <div className="stat-value">{stats.inactive_urls}</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-label">Protected URLs</div>
+              <div className="stat-value">{stats.protected_urls}</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-label">Total Clicks</div>
+              <div className="stat-value">{stats.total_clicks}</div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="dashboard-layout">
+        <div className="card left-panel">
+          <h2 className="table-title">Users</h2>
+
+          {users.length === 0 ? (
+            <p>No users found.</p>
+          ) : (
+            <div className="table-wrapper">
+              <div className="list-header users-grid">
+                <div>ID</div>
+                <div>Email</div>
+                <div>Status</div>
+                <div>Admin</div>
+                <div></div>
+              </div>
+
+              {users.map((user) => {
+                const isOpen = selectedUserId === user.id;
+
+                return (
+                  <div key={user.id} className={`url-entry ${isOpen ? "open" : ""}`}>
+                    <div
+                      className="url-entry-header users-grid"
+                      onClick={() => selectUser(user.id)}
+                    >
+                      <div className="url-entry-col">
+                        <div className="url-entry-label">ID</div>
+                        {user.id}
+                      </div>
+
+                      <div className="url-entry-col truncate">
+                        <div className="url-entry-label">Email</div>
+                        {user.email}
+                      </div>
+
+                      <div className="url-entry-col">
+                        <div className="url-entry-label">Status</div>
+                        {user.is_active ? "Active" : "Banned"}
+                      </div>
+
+                      <div className="url-entry-col">
+                        <div className="url-entry-label">Admin</div>
+                        {user.is_admin ? "Yes" : "No"}
+                      </div>
+
+                      <div className="chevron">⌄</div>
+                    </div>
+
+                    <div className="url-entry-details">
+                      <div className="url-entry-details-inner">
+                        <div className="stats-grid two-col">
+                          <div className="stat-card">
+                            <div className="stat-label">URL Count</div>
+                            <div className="stat-value">{user.url_count}</div>
+                          </div>
+                          <div className="stat-card">
+                            <div className="stat-label">Total Clicks</div>
+                            <div className="stat-value">{user.total_clicks}</div>
+                          </div>
+                        </div>
+
+                        {user.is_admin ? (
+                          <p className="details-note">Admin accounts can't be banned.</p>
+                        ) : (
+                          <div className="user-ban-action">
+                            <button
+                              type="button"
+                              className={`validate-button ${
+                                user.is_active ? "invalidated" : "validated"
+                              }`}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleUserBan(user.id, user.is_active);
+                              }}
+                            >
+                              {user.is_active ? "Ban User" : "Unban User"}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <div className="card right-panel">
+          <h2 className="table-title">
+            {selectedUser ? `URLs — ${selectedUser.email}` : "User URLs"}
+          </h2>
+
+          {!selectedUser && (
+            <p className="no-selection-note">Select a user on the left to see their URLs.</p>
+          )}
+
+          {selectedUser && urlsLoading && <p>Loading URLs...</p>}
+
+          {selectedUser && !urlsLoading && urlsError && (
+            <p className="error">{urlsError}</p>
+          )}
+
+          {selectedUser && !urlsLoading && !urlsError && userUrls.length === 0 && (
+            <p>This user has no URLs yet.</p>
+          )}
+
+          {selectedUser && !urlsLoading && !urlsError && userUrls.length > 0 && (
+            <div className="table-wrapper">
+              <div className="list-header user-urls-grid">
+                <div>ID</div>
+                <div>Original URL</div>
+                <div>Short URL</div>
+                <div>Clicks</div>
+                <div>Status</div>
+              </div>
+
+              {userUrls.map((url) => (
+                <div key={url.id} className="url-entry">
+                  <div className="url-entry-header user-urls-grid" style={{ cursor: "default" }}>
+                    <div className="url-entry-col">
+                      <div className="url-entry-label">ID</div>
+                      {url.id}
+                    </div>
+
+                    <div className="url-entry-col truncate">
+                      <div className="url-entry-label">Original URL</div>
+                      {url.original_url}
+                    </div>
+
+                    <div className="url-entry-col">
+                      <div className="url-entry-label">Short URL</div>
+                      <a
+                        href={url.short_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="short-link"
+                      >
+                        {url.short_url}
+                      </a>
+                    </div>
+
+                    <div className="url-entry-col">
+                      <div className="url-entry-label">Clicks</div>
+                      {url.clicks}
+                    </div>
+
+                    <div className="url-entry-col">
+                      <div className="url-entry-label">Status</div>
+                      {url.is_active ? "Active" : "Inactive"}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
