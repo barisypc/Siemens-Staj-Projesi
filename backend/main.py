@@ -29,7 +29,7 @@ FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
 Base.metadata.create_all(bind=engine)
 app = FastAPI()
 
-limiter = Limiter(key_func=get_remote_address, default_limits=["200/hour"])
+limiter = Limiter(key_func=get_remote_address, default_limits=["10/minute"])
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
