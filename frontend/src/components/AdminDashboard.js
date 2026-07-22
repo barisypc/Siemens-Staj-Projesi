@@ -388,6 +388,15 @@ function AdminDashboard() {
                     <div className="url-entry-col truncate">
                       <div className="url-entry-label">Original URL</div>
                       {url.original_url}
+                      {url.tags && url.tags.length > 0 && (
+                        <div className="url-tag-pills">
+                          {url.tags.map((tag) => (
+                            <span key={tag.id} className="url-tag-pill">
+                              {tag.name}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </div>
 
                     <div className="url-entry-col">

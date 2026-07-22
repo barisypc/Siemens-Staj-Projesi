@@ -1,7 +1,17 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Boolean
+from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Boolean, Table, UniqueConstraint
 from sqlalchemy.orm import relationship
 from database import Base
 from datetime import datetime
+
+# Association table for the many-to-many relationship between URLs and Tags.
+# A URL can have many tags, and a tag can be applied to many of that user's URLs.
+url_tags = Table(
+    "url_tags",
+    Base.metadata,
+    Column("url_id", Integer, ForeignKey("urls.id", ondelete="CASCADE"), primary_key=True),
+    Column("tag_id", Integer, ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True),
+)
+
 
 class URL(Base):
     __tablename__ = "urls"
@@ -20,6 +30,8 @@ class URL(Base):
 
     owner = relationship("User", back_populates="urls")
     click_logs = relationship("URLClick", back_populates="url", cascade="all, delete-orphan")
+    tags = relationship("Tag", secondary=url_tags, back_populates="urls")
+
 
 class User(Base):
     __tablename__ = "users"
@@ -32,6 +44,8 @@ class User(Base):
     is_admin = Column(Boolean, default=False, nullable=False)
 
     urls = relationship("URL", back_populates="owner", cascade="all, delete-orphan")
+    tags = relationship("Tag", back_populates="owner", cascade="all, delete-orphan")
+
 
 class URLClick(Base):
     __tablename__ = "url_clicks"
@@ -44,3 +58,18 @@ class URLClick(Base):
     accessed_country = Column(String, nullable=True)
 
     url = relationship("URL", back_populates="click_logs")
+
+
+class Tag(Base):
+    __tablename__ = "tags"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+
+    owner = relationship("User", back_populates="tags")
+    urls = relationship("URL", secondary=url_tags, back_populates="tags")
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "name", name="uq_user_tag_name"),
+    )

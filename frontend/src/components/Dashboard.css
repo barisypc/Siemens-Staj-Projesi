@@ -732,3 +732,120 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* ------------------------------------------------------------------ */
+/* Tagging feature                                                     */
+/* ------------------------------------------------------------------ */
+
+.tag-manager-divider {
+  border-top: 1px solid #dbeafe;
+  margin: 16px 0 14px;
+}
+
+.tag-manager-heading {
+  margin: 0 0 10px;
+  color: #1e40af;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.tag-manager {
+  margin-bottom: 16px;
+}
+
+.tag-manager-box {
+  margin-top: 10px;
+}
+
+.tag-create-row {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.tag-create-row .input {
+  margin-bottom: 0;
+}
+
+.tag-create-button {
+  width: auto;
+  white-space: nowrap;
+  padding: 10px 16px;
+}
+
+.tag-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: #eef2ff;
+  color: #1e40af;
+  border: 1px solid #c7d2fe;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.tag-chip-remove {
+  background: none;
+  border: none;
+  color: #1e40af;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0;
+}
+
+.tag-chip-remove:hover {
+  color: #dc2626;
+}
+
+.url-tag-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.url-tag-pill {
+  display: inline-block;
+  padding: 3px 8px;
+  background: #eef2ff;
+  color: #1e40af;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.tags-assign-section {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.tags-assign-section h4 {
+  margin: 0 0 10px;
+  color: #1f2937;
+  font-size: 14px;
+}
+
+.tag-checkbox-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.tag-checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #374151;
+  cursor: pointer;
+}

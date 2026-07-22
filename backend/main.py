@@ -129,11 +129,28 @@ def login(user: schemas.Userlogin, response: Response, db: Session = Depends(get
     if not db_user.is_active:
         raise HTTPException(status_code=403, detail="Your account has been banned.")
 
-
     token_data = {"user_id": db_user.id, "username": db_user.username}
     access_token = security.create_Token(token_data)
 
     return schemas.TokenResponse(access_token=access_token)
+
+
+@app.post("/change-password/", response_model=schemas.AdminMessageResponse)
+def change_password(payload: schemas.ChangePasswordRequest, db: Session = Depends(get_db)):
+    db_user = db.query(models.User).filter(models.User.email == payload.email).first()
+
+    if not db_user or not security.verify_password(payload.current_password, db_user.hashed_password):
+        raise HTTPException(status_code=400, detail="Incorrect email or current password")
+
+    password_pattern = r"^(?=.*[0-9])(?=.*[a-z])(?=.*[A-Z])(?=.*[.@#$%^&+=])(?=\S+$).{4,20}$"
+    if not re.match(password_pattern, payload.new_password):
+        raise HTTPException(status_code=400, detail="Invalid password format.")
+
+    db_user.hashed_password = security.hash_password(payload.new_password)
+    db.commit()
+
+    return {"message": "Password updated successfully. Please log in with your new password."}
+
 
 @app.post("/shorten", response_model=schemas.ShortenResponse)
 def shorten_url(
@@ -148,7 +165,6 @@ def shorten_url(
 
     if not user_entry or not user_entry.is_active:
         raise HTTPException(status_code=403, detail="Your account has been banned.")
-
 
     base_url = str(request.base_url).rstrip("/")
 
@@ -223,7 +239,6 @@ def shorten_url(
         is_active=True
     )
 
-
     db.add(new_url)
     db.commit()
     db.refresh(new_url)
@@ -240,9 +255,8 @@ def redirect_url(request: Request, short_code: str, db: Session = Depends(get_db
     if not url_entry:
         raise HTTPException(status_code=404, detail="Short URL not found")
 
-    if not url_entry.owner.is_active:
-        raise HTTPException(status_code=403, detail="This links owner is banned.")
-
+    if url_entry.owner is None or not url_entry.owner.is_active:
+        raise HTTPException(status_code=403, detail="This link's owner has been banned")
 
     if not url_entry.is_active:
         raise HTTPException(status_code=403, detail="This short URL is inactive")
@@ -312,7 +326,8 @@ def list_all_url(
             "clicks": url.clicks,
             "is_active": url.is_active,
             "expires_at": url.expires_at,
-            "click_limit": url.click_limit
+            "click_limit": url.click_limit,
+            "tags": url.tags,
         }
         for url in url_results
     ]
@@ -369,6 +384,174 @@ def validate_url(
     }
 
 
+# ----------------------------------------------------------------------
+# TAG ENDPOINTS
+# ----------------------------------------------------------------------
+
+@app.post("/api/create-tag", response_model=schemas.TagResponse)
+def create_tag(
+    payload: schemas.TagCreate,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    user_id = current_user["user_id"]
+
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Tag name cannot be empty.")
+
+    if len(name) > 30:
+        raise HTTPException(status_code=400, detail="Tag name must be 30 characters or fewer.")
+
+    existing = db.query(models.Tag).filter(
+        models.Tag.user_id == user_id,
+        func.lower(models.Tag.name) == name.lower()
+    ).first()
+
+    if existing:
+        raise HTTPException(status_code=400, detail="You already have a tag with this name.")
+
+    new_tag = models.Tag(name=name, user_id=user_id)
+    db.add(new_tag)
+    db.commit()
+    db.refresh(new_tag)
+
+    return new_tag
+
+
+@app.get("/api/my-tags", response_model=list[schemas.TagResponse])
+def list_my_tags(
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    user_id = current_user["user_id"]
+    return (
+        db.query(models.Tag)
+        .filter(models.Tag.user_id == user_id)
+        .order_by(models.Tag.name)
+        .all()
+    )
+
+
+@app.patch("/api/rename-tag/{tag_id}", response_model=schemas.TagResponse)
+def rename_tag(
+    tag_id: int,
+    payload: schemas.TagUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    user_id = current_user["user_id"]
+
+    tag = db.query(models.Tag).filter(
+        models.Tag.id == tag_id,
+        models.Tag.user_id == user_id
+    ).first()
+
+    if not tag:
+        raise HTTPException(status_code=404, detail="Tag not found.")
+
+    if payload.name is not None:
+        new_name = payload.name.strip()
+
+        if not new_name:
+            raise HTTPException(status_code=400, detail="Tag name cannot be empty.")
+
+        duplicate = db.query(models.Tag).filter(
+            models.Tag.user_id == user_id,
+            func.lower(models.Tag.name) == new_name.lower(),
+            models.Tag.id != tag_id
+        ).first()
+
+        if duplicate:
+            raise HTTPException(status_code=400, detail="You already have a tag with this name.")
+
+        tag.name = new_name
+
+    db.commit()
+    db.refresh(tag)
+
+    return tag
+
+
+@app.patch("/api/change-tag/{url_id}", response_model=schemas.URLResponse)
+def change_tag(
+    url_id: int,
+    payload: schemas.URLTagsUpdateRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    user_id = current_user["user_id"]
+
+    url_entry = db.query(models.URL).filter(
+        models.URL.id == url_id,
+        models.URL.user_id == user_id
+    ).first()
+
+    if not url_entry:
+        raise HTTPException(status_code=404, detail="URL not found.")
+
+    unique_tag_ids = list(set(payload.tag_ids))
+
+    tags = db.query(models.Tag).filter(
+        models.Tag.id.in_(unique_tag_ids),
+        models.Tag.user_id == user_id
+    ).all()
+
+    found_ids = {tag.id for tag in tags}
+    missing_ids = [tid for tid in unique_tag_ids if tid not in found_ids]
+
+    if missing_ids:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Tag id(s) {missing_ids} not found or don't belong to you."
+        )
+
+    # Replacing the whole collection lets SQLAlchemy add/remove association
+    # rows in one shot — this single endpoint covers adding, removing, and
+    # updating a URL's tags depending on what's in the new list.
+    url_entry.tags = tags
+    db.commit()
+    db.refresh(url_entry)
+
+    base_url = str(request.base_url).rstrip("/")
+
+    return {
+        "id": url_entry.id,
+        "original_url": url_entry.original_url,
+        "short_url": f"{base_url}/{url_entry.short_url}",
+        "clicks": url_entry.clicks,
+        "is_active": url_entry.is_active,
+        "expires_at": url_entry.expires_at,
+        "click_limit": url_entry.click_limit,
+        "tags": url_entry.tags,
+    }
+
+
+@app.delete("/api/delete-tag/{tag_id}", response_model=schemas.AdminMessageResponse)
+def delete_tag(
+    tag_id: int,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    user_id = current_user["user_id"]
+
+    tag = db.query(models.Tag).filter(
+        models.Tag.id == tag_id,
+        models.Tag.user_id == user_id
+    ).first()
+
+    if not tag:
+        raise HTTPException(status_code=404, detail="Tag not found.")
+
+    tag_name = tag.name
+    db.delete(tag)
+    db.commit()
+
+    return {"message": f"Tag '{tag_name}' deleted successfully."}
+
+
+# ----------------------------------------------------------------------
 
 
 @app.get("/api/show-statistics/{id}", response_model=schemas.URLStatisticsResponse)
@@ -472,6 +655,9 @@ def verify_password(
     if not url_entry:
         raise HTTPException(status_code=404, detail="Short URL not found")
 
+    if url_entry.owner is None or not url_entry.owner.is_active:
+        raise HTTPException(status_code=403, detail="This link's owner has been banned")
+
     if not url_entry.is_active:
         raise HTTPException(status_code=403, detail="This short URL is inactive")
 
@@ -525,13 +711,6 @@ def verify_password(
     }
 
 
-
-
-
-
-
-
-
 @app.delete("/api/admin/delete-user/{user_id}", response_model=schemas.AdminMessageResponse)
 def delete_user(
     user_id: int,
@@ -574,72 +753,6 @@ def ban_user(
     return {"message": "User status updated successfully"}
 
 
-
-@app.get("/api/admin/users", response_model=list[schemas.AdminUserListItem])
-def list_all_users(
-    db: Session = Depends(get_db),
-    current_admin: models.User = Depends(get_current_admin)
-):
-    users = db.query(models.User).all()
-    result = []
-    for user in users:
-        url_count = db.query(func.count(models.URL.id)).filter(models.URL.user_id == user.id).scalar()
-        total_clicks = db.query(func.coalesce(func.sum(models.URL.clicks), 0)).filter(models.URL.user_id == user.id).scalar()
-        result.append({
-            "id": user.id,
-            "username": user.username,
-            "email": user.email,
-            "is_active": user.is_active,
-            "is_admin": user.is_admin,
-            "url_count": url_count,
-            "total_clicks": total_clicks,
-        })
-    return result
-
-
-
-@app.get("/api/admin/user-urls/{user_id}", response_model=list[schemas.URLResponse])
-def get_user_urls(
-    user_id: int,
-    request: Request,
-    db: Session = Depends(get_db),
-    current_admin: models.User = Depends(get_current_admin)
-):
-    user = db.query(models.User).filter(models.User.id == user_id).first()
-
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    url_results = db.query(models.URL).filter(models.URL.user_id == user_id).all()
-
-    base_url = str(request.base_url).rstrip("/")
-
-    return [
-        {
-            "id": url.id,
-            "original_url": url.original_url,
-            "short_url": f"{base_url}/{url.short_url}",
-            "clicks": url.clicks,
-            "is_active": url.is_active,
-            "expires_at": url.expires_at,
-            "click_limit": url.click_limit
-        }
-        for url in url_results
-    ]
-
-@app.get("/api/me", response_model=schemas.CurrentUserResponse)
-def get_me(
-    db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user)
-):
-    user = db.query(models.User).filter(models.User.id == current_user["user_id"]).first()
-
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    return user
-#User URLlerini görmek için usera basınca yan ekranda onların detayları gözükür.
-
 @app.get("/api/admin/dashboard", response_model=schemas.AdminDashboardStats)
 def admin_dashboard(
     db: Session = Depends(get_db),
@@ -666,18 +779,67 @@ def admin_dashboard(
         "total_clicks": total_clicks,
     }
 
-@app.post("/change-password/", response_model=schemas.AdminMessageResponse)
-def change_password(payload: schemas.ChangePasswordRequest, db: Session = Depends(get_db)):
-    db_user = db.query(models.User).filter(models.User.email == payload.email).first()
 
-    if not db_user or not security.verify_password(payload.current_password, db_user.hashed_password):
-        raise HTTPException(status_code=400, detail="Incorrect email or current password")
+@app.get("/api/admin/users", response_model=list[schemas.AdminUserListItem])
+def list_all_users(
+    db: Session = Depends(get_db),
+    current_admin: models.User = Depends(get_current_admin)
+):
+    users = db.query(models.User).all()
+    result = []
+    for user in users:
+        url_count = db.query(func.count(models.URL.id)).filter(models.URL.user_id == user.id).scalar()
+        total_clicks = db.query(func.coalesce(func.sum(models.URL.clicks), 0)).filter(models.URL.user_id == user.id).scalar()
+        result.append({
+            "id": user.id,
+            "username": user.username,
+            "email": user.email,
+            "is_active": user.is_active,
+            "is_admin": user.is_admin,
+            "url_count": url_count,
+            "total_clicks": total_clicks,
+        })
+    return result
 
-    password_pattern = r"^(?=.*[0-9])(?=.*[a-z])(?=.*[A-Z])(?=.*[.@#$%^&+=])(?=\S+$).{4,20}$"
-    if not re.match(password_pattern, payload.new_password):
-        raise HTTPException(status_code=400, detail="Invalid password format.")
 
-    db_user.hashed_password = security.hash_password(payload.new_password)
-    db.commit()
+@app.get("/api/admin/user-urls/{user_id}", response_model=list[schemas.URLResponse])
+def get_user_urls(
+    user_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_admin: models.User = Depends(get_current_admin)
+):
+    user = db.query(models.User).filter(models.User.id == user_id).first()
 
-    return {"message": "Password updated successfully. Please log in with your new password."}
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    url_results = db.query(models.URL).filter(models.URL.user_id == user_id).all()
+
+    base_url = str(request.base_url).rstrip("/")
+
+    return [
+        {
+            "id": url.id,
+            "original_url": url.original_url,
+            "short_url": f"{base_url}/{url.short_url}",
+            "clicks": url.clicks,
+            "is_active": url.is_active,
+            "expires_at": url.expires_at,
+            "click_limit": url.click_limit,
+            "tags": url.tags,
+        }
+        for url in url_results
+    ]
+
+@app.get("/api/me", response_model=schemas.CurrentUserResponse)
+def get_me(
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    user = db.query(models.User).filter(models.User.id == current_user["user_id"]).first()
+
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    return user

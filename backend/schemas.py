@@ -14,6 +14,23 @@ class ShortenResponse(BaseModel):
     short_url: str
     qr_code_image: Optional[str] = None
 
+class TagCreate(BaseModel):
+    name: str
+
+class TagUpdateRequest(BaseModel):
+    name: Optional[str] = None
+
+class TagResponse(BaseModel):
+    id: int
+    name: str
+
+    class Config:
+        orm_mode = True
+        from_attributes = True
+
+class URLTagsUpdateRequest(BaseModel):
+    tag_ids: List[int]
+
 class URLResponse(BaseModel):
     id: int
     original_url: str
@@ -22,6 +39,7 @@ class URLResponse(BaseModel):
     is_active: bool
     expires_at: Optional[datetime] = None
     click_limit: Optional[int] = None
+    tags: List[TagResponse] = []
 
     class Config:
         orm_mode = True
@@ -94,6 +112,16 @@ class UserDelete(BaseModel):
 class AdminMessageResponse(BaseModel):
     message: str
 
+class AdminDashboardStats(BaseModel):
+    total_users: int
+    active_users: int
+    banned_users: int
+    total_urls: int
+    active_urls: int
+    inactive_urls: int
+    protected_urls: int
+    total_clicks: int
+
 class AdminUserListItem(BaseModel):
     id: int
     username: str
@@ -102,6 +130,10 @@ class AdminUserListItem(BaseModel):
     is_admin: bool
     url_count: int
     total_clicks: int
+
+    class Config:
+        orm_mode = True
+        from_attributes = True
 
 class AdminUserBanRequest(BaseModel):
     is_active: bool
@@ -129,17 +161,6 @@ class CurrentUserResponse(BaseModel):
     class Config:
         orm_mode = True
         from_attributes = True
-
-class AdminDashboardStats(BaseModel):
-    total_users: int
-    active_users: int
-    banned_users: int
-    total_urls: int
-    active_urls: int
-    inactive_urls: int
-    protected_urls: int
-    total_clicks: int
-
 
 class ChangePasswordRequest(BaseModel):
     email: str
