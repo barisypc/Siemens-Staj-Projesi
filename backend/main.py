@@ -24,6 +24,8 @@ import io
 import models
 import schemas
 import security
+import openpyxl
+
 
 from database import SessionLocal, engine, Base
 
@@ -875,19 +877,34 @@ def bulk_upload(
     current_user: dict = Depends(get_current_user)
 ):
     contents = file.file.read()
-    df = pd.read_csv(io.StringIO(contents.decode("utf-8")))
+    filename = (file.filename or "").lower()
+
+    try:
+        if filename.endswith(".csv"):
+            df = pd.read_csv(io.StringIO(contents.decode("utf-8")))
+        elif filename.endswith(".xlsx") or filename.endswith(".xls"):
+            df = pd.read_excel(io.BytesIO(contents))
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="Unsupported file type. Please upload a .csv, .xlsx, or .xls file."
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to read file: {str(e)}")
 
     results = []
 
     for row in df.itertuples(index=False):
+        original_url_value = getattr(row, "URL", None)
         try:
             url_data = schemas.BulkURLCreate(
-                original_url=row.URL,
-                password=row.password if hasattr(row, "Password") else None,
-                count_limit=row.count_limit if hasattr(row, "Count Limit") else None,
-                custom_code=row.custom_code if hasattr(row, "Custom Code") else None
+                original_url=original_url_value,
+                password=row.password if hasattr(row, "password") else None,
+                count_limit=row.count_limit if hasattr(row, "count_limit") else None,
+                custom_code=row.custom_code if hasattr(row, "custom_code") else None
             )
-
 
             result = create_short_url_logic(
                 request=request,
@@ -898,7 +915,7 @@ def bulk_upload(
 
             results.append(
                 schemas.BulkUploadResult(
-                    original_url=row.URLs,
+                    original_url=original_url_value,
                     short_url=result["short_url"],
                     status="success"
                 )
@@ -906,7 +923,7 @@ def bulk_upload(
         except Exception as e:
             results.append(
                 schemas.BulkUploadResult(
-                    original_url=getattr(row, "URLs", ""),
+                    original_url=original_url_value or "",
                     short_url=None,
                     status="failed",
                     error=str(e)
@@ -914,3 +931,129 @@ def bulk_upload(
             )
 
     return results
+
+
+
+
+
+@app.post("/api/report-abuse", response_model=schemas.ReportAbuseResponse)
+@limiter.limit("2/minute")
+def report_abuse(
+    payload: schemas.ReportAbuseRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    user_id = current_user["user_id"]
+
+    url = db.query(models.URL).filter(models.URL.short_url == payload.short_url).first()
+    if not url:
+        raise HTTPException(status_code=404, detail="URL not found")
+
+    existing_report = (
+        db.query(models.AbuseReport)
+        .filter(
+            models.AbuseReport.url_id == url.id,
+            models.AbuseReport.user_id == user_id
+        )
+        .first()
+    )
+
+    if existing_report:
+        raise HTTPException(status_code=400, detail="You have already reported this URL")
+
+    new_report = models.AbuseReport(
+        url_id=url.id,
+        user_id=user_id,
+        reason=payload.reason
+    )
+
+    db.add(new_report)
+    db.commit()
+    db.refresh(new_report)
+
+    return schemas.ReportAbuseResponse(
+        message="Abuse report submitted successfully",
+        abuse_id=new_report.id
+    )
+
+@app.get("/api/get-abuse", response_model=list[schemas.GetAbuseResponse])
+@limiter.limit("2/minute")
+def get_abuse(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    user_id = current_user["user_id"]
+
+    abuse_reports = (
+        db.query(models.AbuseReport)
+        .filter(models.AbuseReport.user_id == user_id)
+        .order_by(models.AbuseReport.id)
+        .all()
+    )
+
+    result = []
+    for report in abuse_reports:
+        result.append(
+            schemas.GetAbuseResponse(
+                abuse_id=report.id,
+                original_url=report.url.original_url,
+                short_code=report.url.short_url,
+                url_id=report.url_id,
+                user_id=report.user_id
+            )
+        )
+
+    return result
+
+
+
+@app.post("/api/admin/accept-abuse", response_model=schemas.AcceptAbuseResponse)
+@limiter.limit("2/minute")
+def accept_abuse(
+    payload: schemas.AcceptAbuseRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_admin: models.User = Depends(get_current_admin)
+):
+    abuse_report = db.query(models.AbuseReport).filter(
+        models.AbuseReport.id == payload.abuse_id
+    ).first()
+
+    if not abuse_report:
+        raise HTTPException(status_code=404, detail="Abuse report not found")
+
+    url = db.query(models.URL).filter(models.URL.id == abuse_report.url_id).first()
+    if not url:
+        raise HTTPException(status_code=404, detail="Associated URL not found")
+
+    url.is_active = False
+    db.delete(abuse_report)
+    db.commit()
+
+    return schemas.AcceptAbuseResponse(
+        message="Abuse report accepted and URL disabled successfully"
+    )
+
+@app.post("/api/admin/refuse-abuse", response_model=schemas.RefuseAbuseResponse)
+@limiter.limit("2/minute")
+def refuse_abuse(
+    payload: schemas.RefuseAbuseRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_admin: models.User = Depends(get_current_admin)
+):
+    abuse_report = db.query(models.AbuseReport).filter(
+        models.AbuseReport.id == payload.abuse_id
+    ).first()
+
+    if not abuse_report:
+        raise HTTPException(status_code=404, detail="Abuse report not found")
+
+    db.delete(abuse_report)
+    db.commit()
+
+    return schemas.RefuseAbuseResponse(
+        message="Abuse report refused successfully"
+    )

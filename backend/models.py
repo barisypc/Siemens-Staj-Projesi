@@ -31,6 +31,7 @@ class URL(Base):
     owner = relationship("User", back_populates="urls")
     click_logs = relationship("URLClick", back_populates="url", cascade="all, delete-orphan")
     tags = relationship("Tag", secondary=url_tags, back_populates="urls")
+    reports = relationship("AbuseReport", back_populates="url", cascade="all, delete-orphan")
 
 
 class User(Base):
@@ -43,8 +44,9 @@ class User(Base):
     is_active = Column(Boolean, default=True, nullable=False)
     is_admin = Column(Boolean, default=False, nullable=False)
 
-    urls = relationship("URL", back_populates="owner", cascade="all, delete-orphan")
-    tags = relationship("Tag", back_populates="owner", cascade="all, delete-orphan")
+    urls =    relationship("URL", back_populates="owner", cascade="all, delete-orphan")
+    tags =    relationship("Tag", back_populates="owner", cascade="all, delete-orphan")
+    reports = relationship("AbuseReport", back_populates="owner", cascade="all, delete-orphan" )
 
 
 class URLClick(Base):
@@ -70,6 +72,21 @@ class Tag(Base):
     owner = relationship("User", back_populates="tags")
     urls = relationship("URL", secondary=url_tags, back_populates="tags")
 
-    __table_args__ = (
-        UniqueConstraint("user_id", "name", name="uq_user_tag_name"),
-    )
+    __table_args__ = (UniqueConstraint("user_id", "name", name="uq_user_tag_name"),)
+
+
+#Burayı düzenleyelim. cumaya kadar bitirirsek geriye hata düzeltme vs. kalır.
+class AbuseReport(Base):
+    __tablename__ = "abuse_reports"
+
+    id =      Column(Integer, primary_key=True, index=True)
+    url_id =  Column(Integer, ForeignKey("urls.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True)
+    reason = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    url   = relationship("URL", back_populates="reports")
+    owner = relationship("User", back_populates="reports")
+
+
+

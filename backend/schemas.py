@@ -180,3 +180,37 @@ class BulkUploadResult(BaseModel):
     short_url: Optional[str] = None
     status: str
     error: Optional[str] = None
+
+
+
+
+
+#Buradan sonrası abuse report
+
+class ReportAbuseRequest(BaseModel):
+    short_url: str
+    reason: Optional[str] = None
+
+class ReportAbuseResponse(BaseModel):
+    message: str
+    abuse_id: int
+
+class RefuseAbuseRequest(BaseModel):
+    abuse_id: int
+
+class RefuseAbuseResponse(BaseModel):
+    message: str
+
+class AcceptAbuseRequest(BaseModel):
+    abuse_id: int
+
+class AcceptAbuseResponse(BaseModel):
+    message: str
+
+class GetAbuseResponse(BaseModel):
+    abuse_id: int
+    original_url: str
+    short_code: str
+    url_id: int
+    user_id: Optional[int] = None
+    

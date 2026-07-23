@@ -849,3 +849,95 @@
   color: #374151;
   cursor: pointer;
 }
+
+/* ------------------------------------------------------------------ */
+/* Bulk upload (CSV / Excel)                                           */
+/* ------------------------------------------------------------------ */
+
+/* The real file input is hidden; the styled button below triggers it. */
+.bulk-file-input {
+  display: none;
+}
+
+.bulk-upload-button {
+  margin-top: 10px;
+  background: #0f172a;
+}
+
+.bulk-upload-button:hover {
+  background: #1e293b;
+}
+
+.bulk-upload-button:disabled {
+  background: #64748b;
+  cursor: not-allowed;
+}
+
+.bulk-upload-hint {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: #6b7280;
+  text-align: center;
+}
+
+.bulk-upload-hint code {
+  background: #eef2ff;
+  color: #1e40af;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 11px;
+}
+
+.bulk-results-box {
+  margin-top: 18px;
+  padding: 16px;
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+}
+
+.bulk-results-list {
+  margin-top: 12px;
+  max-height: 240px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.bulk-result-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-left: 3px solid #16a34a;
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.bulk-result-row.failed {
+  background: #fff7f7;
+  border-color: #fecaca;
+  border-left-color: #dc2626;
+}
+
+.bulk-result-url {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #374151;
+}
+
+.bulk-result-error {
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #dc2626;
+  font-weight: 600;
+}

@@ -1,7 +1,6 @@
-
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import "./Dashboard.css";
-import { getAuthHeaders, logout, isTokenExpired } from "../services/auth";
+import { getAuthHeaders, getToken, logout, isTokenExpired } from "../services/auth";
 import { listTags, createTag, deleteTag, updateUrlTags } from "../services/Tags";
 import { useNavigate } from "react-router-dom";
 import {
@@ -17,9 +16,13 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
- 
+
 const PIE_COLORS = ["#2563eb", "#16a34a", "#f59e0b", "#dc2626", "#7c3aed", "#0891b2"];
- 
+
+// Extensions the bulk upload picker will accept. Kept in one place so the
+// validation check and the <input accept=""> list can't drift apart.
+const ALLOWED_BULK_EXTENSIONS = [".csv", ".xlsx", ".xls"];
+
 function Dashboard() {
   const [originalUrl, setOriginalUrl] = useState("");
   const [shortUrl, setShortUrl] = useState("");
@@ -31,36 +34,42 @@ function Dashboard() {
   const [sessionMessage, setSessionMessage] = useState("");
   const [expandedId, setExpandedId] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
- 
+
   const [statsByUrl, setStatsByUrl] = useState({});
   const [statsLoadingId, setStatsLoadingId] = useState(null);
- 
+
   const [showAdvanced, setShowAdvanced] = useState(false);
- 
+
   const [useExpiration, setUseExpiration] = useState(false);
   const [expirationMinutes, setExpirationMinutes] = useState("");
- 
+
   const [useCustomCode, setUseCustomCode] = useState(false);
   const [customCode, setCustomCode] = useState("");
- 
+
   const [useQrCode, setUseQrCode] = useState(false);
   const [showQrCode, setShowQrCode] = useState(false);
- 
+
   const [useCountLimit, setUseCountLimit] = useState(false);
   const [countLimit, setCountLimit] = useState("");
- 
+
   const [usePassword, setUsePassword] = useState(false);
   const [password, setPassword] = useState("");
- 
+
   const [lastCreatedHasQr, setLastCreatedHasQr] = useState(false);
   const [lastCreatedQrImage, setLastCreatedQrImage] = useState("");
- 
+
   const [tags, setTags] = useState([]);
   const [newTagName, setNewTagName] = useState("");
   const [tagActionLoading, setTagActionLoading] = useState(false);
- 
+
+  // Bulk upload (CSV / Excel)
+  const [bulkUploading, setBulkUploading] = useState(false);
+  const [bulkResults, setBulkResults] = useState(null);
+  const [bulkError, setBulkError] = useState("");
+  const bulkFileInputRef = useRef(null);
+
   const navigate = useNavigate();
- 
+
   // Central handler for "your account was banned mid-session" — any fetch
   // that comes back 403 from a now-inactive account routes through here so
   // the user gets logged out and bounced to /auth with a clear message,
@@ -72,51 +81,51 @@ function Dashboard() {
       state: { message: message || "Your account has been banned." },
     });
   };
- 
+
   const fetchCurrentUser = async () => {
     try {
       const response = await fetch("http://localhost:8000/api/me", {
         method: "GET",
         headers: getAuthHeaders(),
       });
- 
+
       const data = await response.json();
- 
+
       if (response.status === 403) {
         handleBanDetected(data.detail);
         return;
       }
- 
+
       if (!response.ok) {
         throw new Error(data.detail || "Failed to fetch current user");
       }
- 
+
       setIsAdmin(Boolean(data.is_admin));
     } catch (err) {
       console.error(err);
       setError("Failed to load user information.");
     }
   };
- 
+
   const fetchUrls = async () => {
     try {
       setTableLoading(true);
- 
+
       const response = await fetch("http://localhost:8000/api/my-urls", {
         method: "GET",
         headers: getAuthHeaders(),
       });
- 
+
       if (response.status === 403) {
         const data = await response.json().catch(() => ({}));
         handleBanDetected(data.detail);
         return;
       }
- 
+
       if (!response.ok) {
         throw new Error("Failed to fetch URLs");
       }
- 
+
       const data = await response.json();
       setUrls(data);
     } catch (err) {
@@ -126,7 +135,7 @@ function Dashboard() {
       setTableLoading(false);
     }
   };
- 
+
   const fetchTags = async () => {
     try {
       const data = await listTags();
@@ -135,13 +144,13 @@ function Dashboard() {
       console.error(err);
     }
   };
- 
+
   const handleCreateTag = async () => {
     if (!newTagName.trim()) {
       setError("Please enter a tag name.");
       return;
     }
- 
+
     try {
       setTagActionLoading(true);
       const tag = await createTag(newTagName.trim());
@@ -153,12 +162,12 @@ function Dashboard() {
       setTagActionLoading(false);
     }
   };
- 
+
   const handleDeleteTag = async (tagId) => {
     if (!window.confirm("Delete this tag? It will be removed from all URLs that use it.")) {
       return;
     }
- 
+
     try {
       await deleteTag(tagId);
       setTags((prev) => prev.filter((tag) => tag.id !== tagId));
@@ -172,13 +181,13 @@ function Dashboard() {
       setError(err.message || "Failed to delete tag.");
     }
   };
- 
+
   const handleToggleUrlTag = async (url, tagId) => {
     const currentTagIds = (url.tags || []).map((tag) => tag.id);
     const nextTagIds = currentTagIds.includes(tagId)
       ? currentTagIds.filter((id) => id !== tagId)
       : [...currentTagIds, tagId];
- 
+
     try {
       const updated = await updateUrlTags(url.id, nextTagIds);
       setUrls((prev) =>
@@ -188,11 +197,11 @@ function Dashboard() {
       setError(err.message || "Failed to update tags.");
     }
   };
- 
+
   const handleGoToAdmin = () => {
     navigate("/admin");
   };
- 
+
   useEffect(() => {
     const handleSessionExpired = () => {
       logout();
@@ -201,32 +210,32 @@ function Dashboard() {
         state: { message: "Session expired. Please enter your credentials again." },
       });
     };
- 
+
     const initializeDashboard = async () => {
       if (isTokenExpired()) {
         handleSessionExpired();
         return;
       }
- 
+
       await fetchCurrentUser();
       await fetchUrls();
       await fetchTags();
     };
- 
+
     initializeDashboard();
- 
+
     const interval = setInterval(() => {
       if (isTokenExpired()) {
         handleSessionExpired();
         return;
       }
- 
+
       fetchUrls();
     }, 10000);
- 
+
     return () => clearInterval(interval);
   }, [navigate]);
- 
+
   const resetAdvancedInputs = () => {
     setUseExpiration(false);
     setExpirationMinutes("");
@@ -239,44 +248,44 @@ function Dashboard() {
     setPassword("");
     setShowAdvanced(false);
   };
- 
+
   const handleShorten = async () => {
     setError("");
     setShortUrl("");
     setShowQrCode(false);
     setLastCreatedHasQr(false);
     setLastCreatedQrImage("");
- 
+
     if (!originalUrl.trim()) {
       setError("Please enter a URL.");
       return;
     }
- 
+
     if (useExpiration && !expirationMinutes.trim()) {
       setError("Please enter expiration time in minutes.");
       return;
     }
- 
+
     if (useCustomCode && !customCode.trim()) {
       setError("Please enter a custom code.");
       return;
     }
- 
+
     if (useCountLimit && !countLimit.trim()) {
       setError("Please enter a count limit.");
       return;
     }
- 
+
     if (usePassword && !password.trim()) {
       setError("Please enter a password.");
       return;
     }
- 
+
     setLoading(true);
- 
+
     try {
       const qrRequested = useQrCode;
- 
+
       const payload = {
         original_url: originalUrl,
         expiration_minutes: useExpiration ? parseInt(expirationMinutes, 10) : null,
@@ -285,32 +294,32 @@ function Dashboard() {
         count_limit: useCountLimit ? parseInt(countLimit, 10) : null,
         password: usePassword ? password : null,
       };
- 
+
       const response = await fetch("http://localhost:8000/shorten", {
         method: "POST",
         headers: getAuthHeaders(),
         body: JSON.stringify(payload),
       });
- 
+
       const data = await response.json();
- 
+
       if (response.status === 403) {
         handleBanDetected(data.detail);
         return;
       }
- 
+
       if (!response.ok) {
         throw new Error(data.detail || "Failed to shorten URL");
       }
- 
+
       setShortUrl(data.short_url || "");
       setLastCreatedHasQr(qrRequested);
       setShowQrCode(qrRequested);
       setLastCreatedQrImage(data.qr_code_image || "");
- 
+
       setOriginalUrl("");
       resetAdvancedInputs();
- 
+
       await fetchUrls();
     } catch (err) {
       console.error(err);
@@ -319,7 +328,72 @@ function Dashboard() {
       setLoading(false);
     }
   };
- 
+
+  // The visible button only opens the OS file picker; the real <input type="file">
+  // stays hidden so it can be styled like the rest of the dashboard buttons.
+  const handleBulkUploadClick = () => {
+    setBulkError("");
+    setBulkResults(null);
+    bulkFileInputRef.current?.click();
+  };
+
+  const handleBulkFileChange = async (e) => {
+    const file = e.target.files?.[0];
+
+    // Reset the input value so picking the same file twice still fires onChange.
+    e.target.value = "";
+
+    if (!file) return;
+
+    const lowerName = file.name.toLowerCase();
+    const isAllowed = ALLOWED_BULK_EXTENSIONS.some((ext) => lowerName.endsWith(ext));
+
+    if (!isAllowed) {
+      setBulkError("Select a .csv, .xlsx, or .xls file.");
+      return;
+    }
+
+    setBulkError("");
+    setBulkResults(null);
+    setBulkUploading(true);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const token = getToken();
+
+      const response = await fetch("http://localhost:8000/api/bulk-upload", {
+        method: "POST",
+        // No Content-Type header here on purpose — the browser has to set the
+        // multipart boundary itself, and getAuthHeaders() would force JSON.
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: formData,
+      });
+
+      const data = await response.json();
+
+      if (response.status === 403) {
+        handleBanDetected(data.detail);
+        return;
+      }
+
+      if (!response.ok) {
+        throw new Error(data.detail || "Bulk upload failed");
+      }
+
+      setBulkResults(data);
+      await fetchUrls();
+    } catch (err) {
+      console.error(err);
+      setBulkError(
+        err.message || "Bulk upload failed. Check the file format and try again."
+      );
+    } finally {
+      setBulkUploading(false);
+    }
+  };
+
   const handleLogout = async () => {
     try {
       logout();
@@ -329,12 +403,12 @@ function Dashboard() {
       setError("Logout Failed.");
     }
   };
- 
+
   const handleCopy = async (id, text) => {
     try {
       await navigator.clipboard.writeText(text);
       setCopiedId(id);
- 
+
       setTimeout(() => {
         setCopiedId(null);
       }, 1500);
@@ -343,37 +417,37 @@ function Dashboard() {
       setError("Failed to copy link.");
     }
   };
- 
+
   const handleDelete = async (id) => {
     if (!window.confirm("Are you sure you want to delete this URL?")) {
       return;
     }
- 
+
     try {
       const response = await fetch(`http://localhost:8000/api/delete-url/${id}`, {
         method: "DELETE",
         headers: getAuthHeaders(),
       });
- 
+
       const data = await response.json();
- 
+
       if (response.status === 403) {
         handleBanDetected(data.detail);
         return;
       }
- 
+
       if (!response.ok) {
         throw new Error(data.detail || "Failed to delete URL");
       }
- 
+
       setUrls((prev) => prev.filter((url) => url.id !== id));
- 
+
       setStatsByUrl((prev) => {
         const updated = { ...prev };
         delete updated[id];
         return updated;
       });
- 
+
       if (expandedId === id) {
         setExpandedId(null);
       }
@@ -382,7 +456,7 @@ function Dashboard() {
       setError(err.message || "Something went wrong. Check backend or CORS settings.");
     }
   };
- 
+
   const handleValidate = async (id, currentStatus) => {
     try {
       const response = await fetch(`http://localhost:8000/api/validate-url/${id}`, {
@@ -390,18 +464,18 @@ function Dashboard() {
         headers: getAuthHeaders(),
         body: JSON.stringify({ is_active: !currentStatus }),
       });
- 
+
       const data = await response.json();
- 
+
       if (response.status === 403) {
         handleBanDetected(data.detail);
         return;
       }
- 
+
       if (!response.ok) {
         throw new Error(data.detail || "Failed to update validation status");
       }
- 
+
       setUrls((prevUrls) =>
         prevUrls.map((url) =>
           url.id === id ? { ...url, is_active: !currentStatus } : url
@@ -412,27 +486,27 @@ function Dashboard() {
       setError(err.message || "Failed to update validation status.");
     }
   };
- 
+
   const fetchStatsForUrl = async (id) => {
     try {
       setStatsLoadingId(id);
- 
+
       const response = await fetch(`http://localhost:8000/api/show-statistics/${id}`, {
         method: "GET",
         headers: getAuthHeaders(),
       });
- 
+
       const data = await response.json();
- 
+
       if (response.status === 403) {
         handleBanDetected(data.detail);
         return;
       }
- 
+
       if (!response.ok) {
         throw new Error(data.detail || "Failed to show statistics.");
       }
- 
+
       setStatsByUrl((prev) => ({
         ...prev,
         [id]: data,
@@ -444,27 +518,27 @@ function Dashboard() {
       setStatsLoadingId(null);
     }
   };
- 
+
   const toggleExpand = async (id) => {
     if (expandedId === id) {
       setExpandedId(null);
       return;
     }
- 
+
     setExpandedId(id);
     await fetchStatsForUrl(id);
   };
- 
+
   const handleShowQr = () => {
     setShowQrCode((prev) => !prev);
   };
- 
+
   const formatPieData = (items = []) =>
     items.map((item) => ({
       name: item.label,
       value: item.count,
     }));
- 
+
   const formatRecentClicksData = (items = []) =>
     items.map((item, index) => ({
       name: item.timestamp
@@ -477,16 +551,23 @@ function Dashboard() {
         : `Click ${index + 1}`,
       clicks: item.count ?? 1,
     }));
- 
+
+  const bulkSuccessCount = bulkResults
+    ? bulkResults.filter((item) => item.status === "success").length
+    : 0;
+  const bulkFailedCount = bulkResults
+    ? bulkResults.filter((item) => item.status !== "success").length
+    : 0;
+
   return (
     <div className="dashboard-page">
       {sessionMessage && <div className="session-toast">{sessionMessage}</div>}
- 
+
       <div className="dashboard-layout">
         <div className="card left-panel">
           <h1 className="title">URL Shortener</h1>
           <p className="subtitle">Paste your long URL and get a shorter one.</p>
- 
+
           <input
             type="text"
             placeholder="Enter your URL here..."
@@ -494,7 +575,7 @@ function Dashboard() {
             onChange={(e) => setOriginalUrl(e.target.value)}
             className="input"
           />
- 
+
           <button
             type="button"
             className="advanced-toggle-button"
@@ -502,7 +583,7 @@ function Dashboard() {
           >
             {showAdvanced ? "Hide Advanced Features" : "Advanced Features"}
           </button>
- 
+
           {showAdvanced && (
             <div className="advanced-box">
               <label className="feature-row">
@@ -523,7 +604,7 @@ function Dashboard() {
                   className="input small-input"
                 />
               )}
- 
+
               <label className="feature-row">
                 <input
                   type="checkbox"
@@ -541,7 +622,7 @@ function Dashboard() {
                   className="input small-input"
                 />
               )}
- 
+
               <label className="feature-row">
                 <input
                   type="checkbox"
@@ -550,7 +631,7 @@ function Dashboard() {
                 />
                 <span>QR code option</span>
               </label>
- 
+
               <label className="feature-row">
                 <input
                   type="checkbox"
@@ -569,7 +650,7 @@ function Dashboard() {
                   className="input small-input"
                 />
               )}
- 
+
               <label className="feature-row">
                 <input
                   type="checkbox"
@@ -587,10 +668,10 @@ function Dashboard() {
                   className="input small-input"
                 />
               )}
- 
+
               <div className="tag-manager-divider" />
               <h4 className="tag-manager-heading">Manage Tags</h4>
- 
+
               <div className="tag-create-row">
                 <input
                   type="text"
@@ -608,7 +689,7 @@ function Dashboard() {
                   Add Tag
                 </button>
               </div>
- 
+
               {tags.length === 0 ? (
                 <p className="details-note">No tags yet. Create one above.</p>
               ) : (
@@ -630,21 +711,84 @@ function Dashboard() {
               )}
             </div>
           )}
- 
+
           <button onClick={handleShorten} className="button" disabled={loading}>
             {loading ? "Shortening..." : "Shorten URL"}
           </button>
- 
+
+          <input
+            type="file"
+            ref={bulkFileInputRef}
+            onChange={handleBulkFileChange}
+            accept=".csv,.xlsx,.xls,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            className="bulk-file-input"
+          />
+
+          <button
+            type="button"
+            className="button bulk-upload-button"
+            onClick={handleBulkUploadClick}
+            disabled={bulkUploading}
+          >
+            {bulkUploading ? "Uploading..." : "Bulk Upload (CSV / Excel)"}
+          </button>
+
+          <p className="bulk-upload-hint">
+            Accepts .csv, .xlsx, and .xls with a <code>URL</code> column.
+          </p>
+
+          {bulkError && <p className="error">{bulkError}</p>}
+
+          {bulkResults && (
+            <div className="bulk-results-box">
+              <p className="result-label">
+                {bulkSuccessCount} shortened, {bulkFailedCount} failed
+              </p>
+
+              {bulkResults.length === 0 ? (
+                <p className="details-note">The file had no rows to process.</p>
+              ) : (
+                <div className="bulk-results-list">
+                  {bulkResults.map((item, index) => (
+                    <div
+                      key={`${item.original_url}-${index}`}
+                      className={`bulk-result-row ${item.status}`}
+                    >
+                      <span className="bulk-result-url" title={item.original_url}>
+                        {item.original_url || "(empty row)"}
+                      </span>
+
+                      {item.status === "success" ? (
+                        <a
+                          href={item.short_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="short-link"
+                        >
+                          {item.short_url}
+                        </a>
+                      ) : (
+                        <span className="bulk-result-error" title={item.error}>
+                          {item.error}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           {shortUrl && (
             <div className="result-box">
               <p className="result-label">Short URL:</p>
- 
+
               <div className="result-link-row">
                 <a href={shortUrl} target="_blank" rel="noreferrer" className="link">
                   {shortUrl}
                 </a>
               </div>
- 
+
               {lastCreatedHasQr && (
                 <button
                   type="button"
@@ -654,7 +798,7 @@ function Dashboard() {
                   {showQrCode ? "Hide QR Code" : "Show QR Code"}
                 </button>
               )}
- 
+
               {lastCreatedHasQr && showQrCode && (
                 <div className="qr-placeholder">
                   {lastCreatedQrImage ? (
@@ -670,9 +814,9 @@ function Dashboard() {
               )}
             </div>
           )}
- 
+
           {error && <p className="error">{error}</p>}
- 
+
           <div className="logout-row">
             {isAdmin && (
               <button
@@ -683,7 +827,7 @@ function Dashboard() {
                 Admin Panel
               </button>
             )}
- 
+
             <button
               onClick={handleLogout}
               className="logout-small-button"
@@ -694,10 +838,10 @@ function Dashboard() {
             </button>
           </div>
         </div>
- 
+
         <div className="card right-panel">
           <h2 className="table-title">My URLs</h2>
- 
+
           {tableLoading ? (
             <p>Loading your URLs...</p>
           ) : urls.length === 0 ? (
@@ -711,17 +855,17 @@ function Dashboard() {
                 <div>Actions</div>
                 <div></div>
               </div>
- 
+
               {urls.map((url) => {
                 const isOpen = expandedId === url.id;
                 const isValidated = Boolean(url.is_active);
                 const stats = statsByUrl[url.id];
                 const isStatsLoading = statsLoadingId === url.id;
- 
+
                 const browserPieData = formatPieData(stats?.by_browser || []);
                 const platformPieData = formatPieData(stats?.by_platform || []);
                 const recentClicksData = formatRecentClicksData(stats?.recent_clicks || []);
- 
+
                 return (
                   <div
                     key={url.id}
@@ -735,7 +879,7 @@ function Dashboard() {
                         <div className="url-entry-label">ID</div>
                         {url.id}
                       </div>
- 
+
                       <div className="url-entry-col truncate">
                         <div className="url-entry-label">Original URL</div>
                         {url.original_url}
@@ -749,7 +893,7 @@ function Dashboard() {
                           </div>
                         )}
                       </div>
- 
+
                       <div className="url-entry-col">
                         <div className="url-entry-label">Short URL</div>
                         <a
@@ -762,7 +906,7 @@ function Dashboard() {
                           {url.short_url}
                         </a>
                       </div>
- 
+
                       <div
                         className="url-entry-col"
                         onClick={(e) => e.stopPropagation()}
@@ -782,7 +926,7 @@ function Dashboard() {
                               {copiedId === url.id ? "Copied!" : "Copy"}
                             </span>
                           </button>
- 
+
                           <button
                             onClick={() => handleValidate(url.id, isValidated)}
                             className={`validate-button ${
@@ -792,7 +936,7 @@ function Dashboard() {
                           >
                             {isValidated ? "Deactivate" : "Activate"}
                           </button>
- 
+
                           <button
                             onClick={() => handleDelete(url.id)}
                             className="delete-button"
@@ -802,10 +946,10 @@ function Dashboard() {
                           </button>
                         </div>
                       </div>
- 
+
                       <div className="chevron">⌄</div>
                     </div>
- 
+
                     <div className="url-entry-details">
                       <div className="url-entry-details-inner">
                         <div className="stats-grid">
@@ -815,21 +959,21 @@ function Dashboard() {
                               {stats ? stats.total_clicks : url.clicks}
                             </div>
                           </div>
- 
+
                           <div className="stat-card">
                             <div className="stat-label">Status</div>
                             <div className="stat-value">
                               {url.is_active ? "Active" : "Inactive"}
                             </div>
                           </div>
- 
+
                           <div className="stat-card">
                             <div className="stat-label">Click Limit</div>
                             <div className="stat-value">
                               {url.click_limit ?? "None"}
                             </div>
                           </div>
- 
+
                           <div className="stat-card">
                             <div className="stat-label">Expires At</div>
                             <div className="stat-value">
@@ -839,7 +983,7 @@ function Dashboard() {
                             </div>
                           </div>
                         </div>
- 
+
                         <div className="tags-assign-section">
                           <h4>Tags</h4>
                           {tags.length === 0 ? (
@@ -869,15 +1013,15 @@ function Dashboard() {
                             </div>
                           )}
                         </div>
- 
+
                         {isStatsLoading && (
                           <div className="details-note">Loading statistics...</div>
                         )}
- 
+
                         {!isStatsLoading && stats && (
                           <div className="statistics-section">
                             <h3>Statistics</h3>
- 
+
                             <div className="charts-grid">
                               <div className="chart-card">
                                 <h4>Browser Distribution</h4>
@@ -910,7 +1054,7 @@ function Dashboard() {
                                   <p>No browser data available.</p>
                                 )}
                               </div>
- 
+
                               <div className="chart-card">
                                 <h4>Platform Distribution</h4>
                                 {platformPieData.length > 0 ? (
@@ -943,13 +1087,13 @@ function Dashboard() {
                                 )}
                               </div>
                             </div>
- 
+
                             <div className="chart-card click-history-card">
                               <h4>Recent Click Activity</h4>
                               <div className="click-total">
                                 Total Clicks: <strong>{stats.total_clicks ?? 0}</strong>
                               </div>
- 
+
                               {recentClicksData.length > 0 ? (
                                 <div className="chart-wrapper">
                                   <ResponsiveContainer width="100%" height={320}>
@@ -971,7 +1115,7 @@ function Dashboard() {
                                 <p>No recent click history available.</p>
                               )}
                             </div>
- 
+
                             <div className="stats-group">
                               <h4>By Country</h4>
                               {stats.by_country && stats.by_country.length > 0 ? (
@@ -988,7 +1132,7 @@ function Dashboard() {
                             </div>
                           </div>
                         )}
- 
+
                         {!isStatsLoading && !stats && (
                           <div className="details-note">
                             No statistics available for this URL yet.
@@ -1006,6 +1150,5 @@ function Dashboard() {
     </div>
   );
 }
- 
+
 export default Dashboard;
- 
