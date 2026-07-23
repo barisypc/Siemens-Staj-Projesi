@@ -8,3 +8,7 @@ Pillow
 user-agents
 email-validator
 slowapi
+redis
+pandas
+python-multipart
+

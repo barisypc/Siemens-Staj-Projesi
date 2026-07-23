@@ -38,7 +38,14 @@ services:
       - /app/node_modules 
     environment:
       - CHOKIDAR_USEPOLLING=true    # ← Add this!
-      - WATCHPACK_POLLING=true     # ← ADD THIS LINE! Protects node_modules inside the container
+      - WATCHPACK_POLLING=true 
+  
+    # ← ADD THIS LINE! Protects node_modules inside the container
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
 
 
 volumes:

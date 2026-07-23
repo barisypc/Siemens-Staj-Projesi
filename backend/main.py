@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, Request, Response
+from fastapi import FastAPI, Depends, HTTPException, Request, Response, UploadFile, File
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -10,7 +10,8 @@ from user_agents import parse
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
-
+import pandas as pd
+from typing import List
 
 import base64
 import qrcode
@@ -18,6 +19,7 @@ import random
 import string
 import re
 import os
+import io
 
 import models
 import schemas
@@ -95,6 +97,92 @@ def generate_qr_base64(data: str) -> str:
     img_base64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
     return f"data:image/png;base64,{img_base64}"
 
+
+
+def create_short_url_logic(*, request: Request, db: Session, current_user: dict, url_data):
+    user_id = current_user["user_id"]
+
+    user_entry = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user_entry or not user_entry.is_active:
+        raise HTTPException(status_code=403, detail="Your account has been banned.")
+
+    base_url = str(request.base_url).rstrip("/")
+
+    url_pattern = r"^https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,20}\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*)$"
+    if not re.match(url_pattern, str(url_data.original_url)):
+        raise HTTPException(status_code=400, detail="Invalid URL format.")
+
+    if getattr(url_data, "custom_code", None) and url_data.custom_code.strip():
+        short_code = url_data.custom_code.strip()
+
+        custom_code_pattern = r"^[a-zA-Z0-9_-]{3,30}$"
+        if not re.match(custom_code_pattern, short_code):
+            raise HTTPException(
+                status_code=400,
+                detail="Custom code must be 3-30 characters and contain only letters, numbers, hyphens, or underscores."
+            )
+
+        existing_custom = db.query(models.URL).filter(models.URL.short_url == short_code).first()
+        if existing_custom:
+            raise HTTPException(status_code=400, detail="This custom code is already taken.")
+    else:
+        existing_url = db.query(models.URL).filter(
+            models.URL.original_url == str(url_data.original_url),
+            models.URL.user_id == user_id
+        ).first()
+
+        if existing_url:
+            final_short_url = f"{base_url}/{existing_url.short_url}"
+            qr_code_image = generate_qr_base64(final_short_url) if getattr(url_data, "qr_code", False) else None
+            return {
+                "short_url": final_short_url,
+                "qr_code_image": qr_code_image
+            }
+
+        short_code = generate_short_code()
+        while db.query(models.URL).filter(models.URL.short_url == short_code).first():
+            short_code = generate_short_code()
+
+    expires_at = None
+    if getattr(url_data, "expiration_minutes", None) is not None:
+        if url_data.expiration_minutes <= 0:
+            raise HTTPException(status_code=400, detail="Expiration time must be greater than 0.")
+        expires_at = datetime.utcnow() + timedelta(minutes=url_data.expiration_minutes)
+
+    click_limit = None
+    if getattr(url_data, "count_limit", None) is not None:
+        if url_data.count_limit <= 0:
+            raise HTTPException(status_code=400, detail="Count limit must be greater than 0.")
+        click_limit = url_data.count_limit
+
+    password_hash = None
+    if getattr(url_data, "password", None) and url_data.password.strip():
+        password_hash = security.hash_password(url_data.password.strip())
+
+    new_url = models.URL(
+        original_url=str(url_data.original_url),
+        short_url=short_code,
+        user_id=user_id,
+        expires_at=expires_at,
+        click_limit=click_limit,
+        password_hash=password_hash,
+        is_active=True
+    )
+
+    db.add(new_url)
+    db.commit()
+    db.refresh(new_url)
+
+    final_short_url = f"{base_url}/{short_code}"
+    qr_code_image = generate_qr_base64(final_short_url) if getattr(url_data, "qr_code", False) else None
+
+    return {
+        "short_url": final_short_url,
+        "qr_code_image": qr_code_image
+    }
+
+
+
 @app.post("/signup/", response_model=schemas.UserResponse)
 @limiter.limit("4/minute")
 def create_user(request: Request, user: schemas.UserCreate, db: Session = Depends(get_db)):
@@ -171,93 +259,16 @@ def shorten_url(
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user)
 ):
-    user_id = current_user["user_id"]
-
-    user_entry = db.query(models.User).filter(models.User.id == user_id).first()
-
-    if not user_entry or not user_entry.is_active:
-        raise HTTPException(status_code=403, detail="Your account has been banned.")
-
-    base_url = str(request.base_url).rstrip("/")
-
-    url_pattern = r"^https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,20}\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*)$"
-    if not re.match(url_pattern, str(url.original_url)):
-        raise HTTPException(status_code=400, detail="Invalid URL format.")
-
-    existing_url = db.query(models.URL).filter(
-        models.URL.original_url == str(url.original_url),
-        models.URL.user_id == user_id,
-        models.URL.custom_code.is_(None) if hasattr(models.URL, "custom_code") else True
-    ).first()
-
-    if existing_url and not (url.custom_code and url.custom_code.strip()):
-        existing_short_code = str(existing_url.short_url)
-        final_short_url = f"{base_url}/{existing_short_code}"
-
-        qr_code_image = generate_qr_base64(final_short_url) if url.qr_code else None
-
-        return schemas.ShortenResponse(
-            short_url=final_short_url,
-            qr_code_image=qr_code_image
-        )
-
-    if url.custom_code and url.custom_code.strip():
-        short_code = url.custom_code.strip()
-
-        custom_code_pattern = r"^[a-zA-Z0-9_-]{3,30}$"
-        if not re.match(custom_code_pattern, short_code):
-            raise HTTPException(
-                status_code=400,
-                detail="Custom code must be 3-30 characters and contain only letters, numbers, hyphens, or underscores."
-            )
-
-        existing_custom = db.query(models.URL).filter(
-            models.URL.short_url == short_code
-        ).first()
-
-        if existing_custom:
-            raise HTTPException(status_code=400, detail="This custom code is already taken.")
-    else:
-        short_code = generate_short_code()
-        while db.query(models.URL).filter(models.URL.short_url == short_code).first():
-            short_code = generate_short_code()
-
-    expires_at = None
-    if url.expiration_minutes is not None:
-        if url.expiration_minutes <= 0:
-            raise HTTPException(status_code=400, detail="Expiration time must be greater than 0.")
-        expires_at = datetime.utcnow() + timedelta(minutes=url.expiration_minutes)
-
-    click_limit = None
-    if url.count_limit is not None:
-        if url.count_limit <= 0:
-            raise HTTPException(status_code=400, detail="Count limit must be greater than 0.")
-        click_limit = url.count_limit
-
-    password_hash = None
-    if url.password and url.password.strip():
-        password_hash = security.hash_password(url.password.strip())
-
-    final_short_url = f"{base_url}/{short_code}"
-    qr_code_image = generate_qr_base64(final_short_url) if url.qr_code else None
-
-    new_url = models.URL(
-        original_url=str(url.original_url),
-        short_url=short_code,
-        user_id=user_id,
-        expires_at=expires_at,
-        click_limit=click_limit,
-        password_hash=password_hash,
-        is_active=True
+    result = create_short_url_logic(
+        request=request,
+        db=db,
+        current_user=current_user,
+        url_data=url
     )
 
-    db.add(new_url)
-    db.commit()
-    db.refresh(new_url)
-
     return schemas.ShortenResponse(
-        short_url=final_short_url,
-        qr_code_image=qr_code_image
+        short_url=result["short_url"],
+        qr_code_image=result["qr_code_image"]
     )
 
 @app.get("/{short_code}")
@@ -845,13 +856,58 @@ def get_user_urls(
     ]
 
 @app.get("/api/me", response_model=schemas.CurrentUserResponse)
-def get_me(
-    db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user)
-):
+def get_me(db: Session = Depends(get_db),current_user: dict = Depends(get_current_user)):
     user = db.query(models.User).filter(models.User.id == current_user["user_id"]).first()
 
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
     return user
+
+
+
+@app.post("/api/bulk-upload", response_model=List[schemas.BulkUploadResult])
+@limiter.limit("5/minute")
+def bulk_upload(
+    request: Request,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    contents = file.file.read()
+    df = pd.read_csv(io.StringIO(contents.decode("utf-8")))
+
+    results = []
+
+    for row in df.itertuples(index=False):
+        try:
+            url_data = schemas.BulkURLCreate(
+                original_url=row.URLs,
+                password=row.password if hasattr(row, "password") else None
+            )
+
+            result = create_short_url_logic(
+                request=request,
+                db=db,
+                current_user=current_user,
+                url_data=url_data
+            )
+
+            results.append(
+                schemas.BulkUploadResult(
+                    original_url=row.URLs,
+                    short_url=result["short_url"],
+                    status="success"
+                )
+            )
+        except Exception as e:
+            results.append(
+                schemas.BulkUploadResult(
+                    original_url=getattr(row, "URLs", ""),
+                    short_url=None,
+                    status="failed",
+                    error=str(e)
+                )
+            )
+
+    return results

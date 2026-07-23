@@ -166,3 +166,17 @@ class ChangePasswordRequest(BaseModel):
     email: str
     current_password: str
     new_password: str
+
+class BulkURLCreate(BaseModel):
+    original_url: str
+    password: Optional[str] = None
+    custom_code: Optional[str] = None
+    expiration_minutes: Optional[int] = None
+    count_limit: Optional[int] = None
+    qr_code: Optional[bool] = False
+
+class BulkUploadResult(BaseModel):
+    original_url: str
+    short_url: Optional[str] = None
+    status: str
+    error: Optional[str] = None
