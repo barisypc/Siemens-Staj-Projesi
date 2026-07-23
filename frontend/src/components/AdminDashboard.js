@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { getAuthHeaders, logout, isTokenExpired } from "../services/auth";
+import { listAllAbuseReports, acceptAbuse, refuseAbuse } from "../services/Abuse";
 import { useNavigate } from "react-router-dom";
 import { ROUTES } from "../routes";
 import "./Dashboard.css";
@@ -20,6 +21,12 @@ function AdminDashboard() {
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [deleteInFlight, setDeleteInFlight] = useState(false);
 
+  // Abuse reports panel
+  const [abuseReports, setAbuseReports] = useState([]);
+  const [abuseLoading, setAbuseLoading] = useState(true);
+  const [abuseError, setAbuseError] = useState("");
+  const [abuseActionId, setAbuseActionId] = useState(null);
+
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -30,6 +37,7 @@ function AdminDashboard() {
     }
 
     loadAdminData();
+    loadAbuseReports();
   }, []);
 
   async function loadAdminData() {
@@ -62,6 +70,21 @@ function AdminDashboard() {
       setError(err.message || "Failed to load admin dashboard");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadAbuseReports() {
+    try {
+      setAbuseLoading(true);
+      setAbuseError("");
+
+      const data = await listAllAbuseReports();
+      setAbuseReports(data);
+    } catch (err) {
+      setAbuseError(err.message || "Failed to load abuse reports");
+      setAbuseReports([]);
+    } finally {
+      setAbuseLoading(false);
     }
   }
 
@@ -176,12 +199,68 @@ function AdminDashboard() {
       }
 
       await loadAdminData();
+
+      // Deleting a user cascades to their URLs, which cascades to any abuse
+      // reports filed against those URLs — so the list has to be reloaded.
+      await loadAbuseReports();
     } catch (err) {
       setError(err.message || "Failed to delete user");
     } finally {
       setDeleteInFlight(false);
       setUserToDelete(null);
       setDeleteConfirmText("");
+    }
+  }
+
+  async function handleAcceptAbuse(report) {
+    const confirmed = window.confirm(
+      `Accept report #${report.abuse_id}? This deactivates the short URL "${report.short_code}".`
+    );
+    if (!confirmed) return;
+
+    try {
+      setAbuseActionId(report.abuse_id);
+      setAbuseError("");
+
+      await acceptAbuse(report.abuse_id);
+
+      // The backend deletes the report and flips the URL to inactive, so drop
+      // the row locally and refresh everything that reflects URL status.
+      setAbuseReports((prev) =>
+        prev.filter((item) => item.abuse_id !== report.abuse_id)
+      );
+
+      await loadAdminData();
+
+      if (selectedUserId !== null) {
+        await fetchUserUrls(selectedUserId);
+      }
+    } catch (err) {
+      setAbuseError(err.message || "Failed to accept the report");
+    } finally {
+      setAbuseActionId(null);
+    }
+  }
+
+  async function handleRefuseAbuse(report) {
+    const confirmed = window.confirm(
+      `Refuse report #${report.abuse_id}? The report is discarded and the URL stays active.`
+    );
+    if (!confirmed) return;
+
+    try {
+      setAbuseActionId(report.abuse_id);
+      setAbuseError("");
+
+      await refuseAbuse(report.abuse_id);
+
+      setAbuseReports((prev) =>
+        prev.filter((item) => item.abuse_id !== report.abuse_id)
+      );
+    } catch (err) {
+      setAbuseError(err.message || "Failed to refuse the report");
+    } finally {
+      setAbuseActionId(null);
     }
   }
 
@@ -197,7 +276,7 @@ function AdminDashboard() {
         <div className="admin-header-top">
           <div className="admin-header-text">
             <h1 className="title">Admin Dashboard</h1>
-            <p className="subtitle">Monitor activity and manage users.</p>
+            <p className="subtitle">Monitor activity, review reports and manage users.</p>
           </div>
 
           <button
@@ -210,46 +289,160 @@ function AdminDashboard() {
         </div>
 
         {error && <p className="error">{error}</p>}
-
-        {stats && (
-          <div className="stats-grid">
-            <div className="stat-card">
-              <div className="stat-label">Total Users</div>
-              <div className="stat-value">{stats.total_users}</div>
-            </div>
-            <div className="stat-card">
-              <div className="stat-label">Active Users</div>
-              <div className="stat-value">{stats.active_users}</div>
-            </div>
-            <div className="stat-card">
-              <div className="stat-label">Banned Users</div>
-              <div className="stat-value">{stats.banned_users}</div>
-            </div>
-            <div className="stat-card">
-              <div className="stat-label">Total URLs</div>
-              <div className="stat-value">{stats.total_urls}</div>
-            </div>
-            <div className="stat-card">
-              <div className="stat-label">Active URLs</div>
-              <div className="stat-value">{stats.active_urls}</div>
-            </div>
-            <div className="stat-card">
-              <div className="stat-label">Inactive URLs</div>
-              <div className="stat-value">{stats.inactive_urls}</div>
-            </div>
-            <div className="stat-card">
-              <div className="stat-label">Protected URLs</div>
-              <div className="stat-value">{stats.protected_urls}</div>
-            </div>
-            <div className="stat-card">
-              <div className="stat-label">Total Clicks</div>
-              <div className="stat-value">{stats.total_clicks}</div>
-            </div>
-          </div>
-        )}
       </div>
 
-      <div className="dashboard-layout">
+      {/* Row 1 — platform stats on the left, abuse reports on the right */}
+      <div className="dashboard-layout admin-row">
+        <div className="card left-panel stats-panel">
+          <h2 className="table-title">Overview</h2>
+
+          {stats && (
+            <div className="stats-grid two-col">
+              <div className="stat-card">
+                <div className="stat-label">Total Users</div>
+                <div className="stat-value">{stats.total_users}</div>
+              </div>
+              <div className="stat-card">
+                <div className="stat-label">Active Users</div>
+                <div className="stat-value">{stats.active_users}</div>
+              </div>
+              <div className="stat-card">
+                <div className="stat-label">Banned Users</div>
+                <div className="stat-value">{stats.banned_users}</div>
+              </div>
+              <div className="stat-card">
+                <div className="stat-label">Total URLs</div>
+                <div className="stat-value">{stats.total_urls}</div>
+              </div>
+              <div className="stat-card">
+                <div className="stat-label">Active URLs</div>
+                <div className="stat-value">{stats.active_urls}</div>
+              </div>
+              <div className="stat-card">
+                <div className="stat-label">Inactive URLs</div>
+                <div className="stat-value">{stats.inactive_urls}</div>
+              </div>
+              <div className="stat-card">
+                <div className="stat-label">Protected URLs</div>
+                <div className="stat-value">{stats.protected_urls}</div>
+              </div>
+              <div className="stat-card">
+                <div className="stat-label">Total Clicks</div>
+                <div className="stat-value">{stats.total_clicks}</div>
+              </div>
+              <div className="stat-card">
+                <div className="stat-label">Open Reports</div>
+                <div className="stat-value">{abuseReports.length}</div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="card right-panel">
+          <div className="abuse-panel-header">
+            <h2 className="table-title">Abuse Reports</h2>
+            <button
+              type="button"
+              className="abuse-refresh-button"
+              onClick={loadAbuseReports}
+              disabled={abuseLoading}
+            >
+              {abuseLoading ? "Loading..." : "Refresh"}
+            </button>
+          </div>
+
+          {abuseError && <p className="error">{abuseError}</p>}
+
+          {!abuseLoading && !abuseError && abuseReports.length === 0 && (
+            <p className="no-selection-note">No open abuse reports. </p>
+          )}
+
+          {abuseReports.length > 0 && (
+            <div className="table-wrapper">
+              <div className="list-header abuse-grid">
+                <div>ID</div>
+                <div>Short URL</div>
+                <div>Original URL</div>
+                <div>Reported By</div>
+                <div>Actions</div>
+              </div>
+
+              {abuseReports.map((report) => {
+                const isBusy = abuseActionId === report.abuse_id;
+
+                return (
+                  <div key={report.abuse_id} className="url-entry">
+                    <div
+                      className="url-entry-header abuse-grid"
+                      style={{ cursor: "default" }}
+                    >
+                      <div className="url-entry-col">
+                        <div className="url-entry-label">ID</div>#{report.abuse_id}
+                      </div>
+
+                      <div className="url-entry-col truncate">
+                        <div className="url-entry-label">Short URL</div>
+                        <a
+                          href={report.short_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="short-link"
+                        >
+                          {report.short_code}
+                        </a>
+                        {!report.url_is_active && (
+                          <span className="abuse-inactive-pill">inactive</span>
+                        )}
+                      </div>
+
+                      <div className="url-entry-col truncate">
+                        <div className="url-entry-label">Original URL</div>
+                        {report.original_url}
+                        {report.reason && (
+                          <div className="abuse-reason" title={report.reason}>
+                            {report.reason}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="url-entry-col truncate">
+                        <div className="url-entry-label">Reported By</div>
+                        {report.reporter_email || "Deleted user"}
+                      </div>
+
+                      <div className="url-entry-col">
+                        <div className="url-entry-label">Actions</div>
+                        <div className="action-buttons">
+                          <button
+                            type="button"
+                            className="delete-button abuse-accept-button"
+                            disabled={isBusy}
+                            onClick={() => handleAcceptAbuse(report)}
+                          >
+                            {isBusy ? "..." : "Accept"}
+                          </button>
+
+                          <button
+                            type="button"
+                            className="validate-button"
+                            disabled={isBusy}
+                            onClick={() => handleRefuseAbuse(report)}
+                          >
+                            {isBusy ? "..." : "Refuse"}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Row 2 — users on the left, the selected user's URLs on the right */}
+      <div className="dashboard-layout admin-row">
         <div className="card left-panel">
           <h2 className="table-title">Users</h2>
 
