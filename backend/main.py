@@ -882,9 +882,12 @@ def bulk_upload(
     for row in df.itertuples(index=False):
         try:
             url_data = schemas.BulkURLCreate(
-                original_url=row.URLs,
-                password=row.password if hasattr(row, "password") else None
+                original_url=row.URL,
+                password=row.password if hasattr(row, "Password") else None,
+                count_limit=row.count_limit if hasattr(row, "Count Limit") else None,
+                custom_code=row.custom_code if hasattr(row, "Custom Code") else None
             )
+
 
             result = create_short_url_logic(
                 request=request,
