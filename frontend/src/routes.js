@@ -10,5 +10,5 @@ export const ROUTES = {
   HOME: "/",
   DASHBOARD: "/dashboard",
   ADMIN: "/admin",
-
+  REPORT: "/report"
 };

@@ -102,3 +102,18 @@
     grid-template-columns: 1fr;
   }
 }
+
+.report-optional {
+  color: #6b7280;
+  font-weight: 500;
+  font-size: 12px;
+}
+
+/* When there's no "My Reports" panel (anonymous visitor), let the form
+   breathe instead of staying pinned to the narrower 35% left-panel width. */
+.report-form-panel-solo {
+  width: 100%;
+  max-width: 560px;
+  min-width: unset;
+  margin: 0 auto;
+}

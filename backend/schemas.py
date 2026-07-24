@@ -213,4 +213,16 @@ class GetAbuseResponse(BaseModel):
     short_code: str
     url_id: int
     user_id: Optional[int] = None
-    
+
+class AdminAbuseReportItem(BaseModel):
+    abuse_id: int
+    url_id: int
+    short_code: str
+    short_url: str
+    original_url: str
+    reason: Optional[str] = None
+    created_at: datetime
+    reporter_id: Optional[int] = None
+    reporter_email: Optional[str] = None
+    owner_email: Optional[str] = None
+    url_is_active: bool

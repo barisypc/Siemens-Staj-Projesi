@@ -1,8 +1,6 @@
-//This is for the report section.
-
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { getAuthHeaders } from "../services/auth";
+import { getAuthHeaders, isAuthenticated } from "../services/auth";
 import {
   reportAbuse,
   listMyAbuseReports,
@@ -13,6 +11,12 @@ import "./Dashboard.css";
 import "./Report.css";
 
 function Report() {
+  // Anyone can land on this page — logged in or not — so it must never
+  // assume an account exists. The "my reports" list and the e-mail prefill
+  // both need one, and are skipped entirely for anonymous visitors instead
+  // of firing a request the backend would just reject.
+  const loggedIn = isAuthenticated();
+
   const [shortUrl, setShortUrl] = useState("");
   const [email, setEmail] = useState("");
   const [reason, setReason] = useState("");
@@ -22,12 +26,14 @@ function Report() {
   const [message, setMessage] = useState("");
 
   const [myReports, setMyReports] = useState([]);
-  const [reportsLoading, setReportsLoading] = useState(true);
+  const [reportsLoading, setReportsLoading] = useState(false);
   const [reportsError, setReportsError] = useState("");
 
   const navigate = useNavigate();
 
   const loadMyReports = async () => {
+    if (!loggedIn) return;
+
     try {
       setReportsLoading(true);
       setReportsError("");
@@ -44,8 +50,10 @@ function Report() {
   };
 
   useEffect(() => {
+    if (!loggedIn) return;
+
     // Pre-fill the e-mail field with the logged-in account's address; the
-    // user can still overwrite it with a different contact address.
+    // user can still overwrite it, or clear it entirely — it's optional.
     const loadCurrentUser = async () => {
       try {
         const response = await fetch("http://localhost:8000/api/me", {
@@ -65,6 +73,7 @@ function Report() {
 
     loadCurrentUser();
     loadMyReports();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleSubmit = async (e) => {
@@ -82,11 +91,6 @@ function Report() {
       return;
     }
 
-    if (!email.trim()) {
-      setError("Please enter a contact e-mail.");
-      return;
-    }
-
     if (!reason.trim()) {
       setError("Please describe why you are reporting this link.");
       return;
@@ -95,6 +99,8 @@ function Report() {
     try {
       setSubmitting(true);
 
+      // email is intentionally optional — reportAbuse() only folds it into
+      // the reason text when it's actually filled in.
       const data = await reportAbuse({ shortUrl, reason, email });
 
       setMessage(
@@ -102,6 +108,10 @@ function Report() {
       );
       setShortUrl("");
       setReason("");
+
+      if (loggedIn) {
+        await loadMyReports();
+      }
     } catch (err) {
       setError(err.message || "Failed to submit the abuse report.");
     } finally {
@@ -114,11 +124,15 @@ function Report() {
   return (
     <div className="dashboard-page">
       <div className="dashboard-layout">
-        <div className="card left-panel report-form-panel">
+        <div
+          className={`card left-panel report-form-panel ${
+            loggedIn ? "" : "report-form-panel-solo"
+          }`}
+        >
           <h1 className="title">Report Abuse</h1>
           <p className="subtitle">
-            Found a shortened link used for spam, phishing or malware? Tell us
-            about it and an admin will review it.
+            Found a shortened link used for spam, phishing or malware? Anyone
+            can report it here — no account needed.
           </p>
 
           <form className="report-form" onSubmit={handleSubmit}>
@@ -141,13 +155,13 @@ function Report() {
             )}
 
             <label className="report-label" htmlFor="report-email">
-              Your e-mail <span className="report-required">*</span>
+              Your e-mail <span className="report-optional">(optional)</span>
             </label>
             <input
               id="report-email"
               type="email"
               className="input"
-              placeholder="you@example.com"
+              placeholder="you@example.com — only if you'd like a reply"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
             />
@@ -173,76 +187,78 @@ function Report() {
           {error && <p className="error">{error}</p>}
 
           <p className="report-note">
-            You can report the same link only once. Reports are rate limited to
-            2 per minute.
+            Reports are rate limited to 2 per minute
+            {loggedIn ? " and you can report the same link only once." : "."}
           </p>
 
           <div className="logout-row">
             <button
               type="button"
               className="logout-small-button"
-              onClick={() => navigate(ROUTES.DASHBOARD)}
+              onClick={() => navigate(loggedIn ? ROUTES.DASHBOARD : ROUTES.AUTH)}
             >
-              ← Dashboard
+              {loggedIn ? "← Dashboard" : "← Login"}
             </button>
           </div>
         </div>
 
-        <div className="card right-panel">
-          <div className="report-list-header">
-            <h2 className="table-title">My Reports</h2>
-            <button
-              type="button"
-              className="report-refresh-button"
-              onClick={loadMyReports}
-              disabled={reportsLoading}
-            >
-              {reportsLoading ? "Loading..." : "Refresh"}
-            </button>
-          </div>
+        {loggedIn && (
+          <div className="card right-panel">
+            <div className="report-list-header">
+              <h2 className="table-title">My Reports</h2>
+              <button
+                type="button"
+                className="report-refresh-button"
+                onClick={loadMyReports}
+                disabled={reportsLoading}
+              >
+                {reportsLoading ? "Loading..." : "Refresh"}
+              </button>
+            </div>
 
-          {reportsError && <p className="error">{reportsError}</p>}
+            {reportsError && <p className="error">{reportsError}</p>}
 
-          {!reportsLoading && !reportsError && myReports.length === 0 && (
-            <p className="details-note">
-              You haven't reported any links yet.
-            </p>
-          )}
+            {!reportsLoading && !reportsError && myReports.length === 0 && (
+              <p className="details-note">
+                You haven't reported any links yet.
+              </p>
+            )}
 
-          {myReports.length > 0 && (
-            <div className="table-wrapper">
-              <div className="list-header report-grid">
-                <div>Report</div>
-                <div>Short Code</div>
-                <div>Original URL</div>
-              </div>
+            {myReports.length > 0 && (
+              <div className="table-wrapper">
+                <div className="list-header report-grid">
+                  <div>Report</div>
+                  <div>Short Code</div>
+                  <div>Original URL</div>
+                </div>
 
-              {myReports.map((report) => (
-                <div key={report.abuse_id} className="url-entry">
-                  <div
-                    className="url-entry-header report-grid"
-                    style={{ cursor: "default" }}
-                  >
-                    <div className="url-entry-col">
-                      <div className="url-entry-label">Report</div>#
-                      {report.abuse_id}
-                    </div>
+                {myReports.map((report) => (
+                  <div key={report.abuse_id} className="url-entry">
+                    <div
+                      className="url-entry-header report-grid"
+                      style={{ cursor: "default" }}
+                    >
+                      <div className="url-entry-col">
+                        <div className="url-entry-label">Report</div>#
+                        {report.abuse_id}
+                      </div>
 
-                    <div className="url-entry-col">
-                      <div className="url-entry-label">Short Code</div>
-                      {report.short_code}
-                    </div>
+                      <div className="url-entry-col">
+                        <div className="url-entry-label">Short Code</div>
+                        {report.short_code}
+                      </div>
 
-                    <div className="url-entry-col truncate">
-                      <div className="url-entry-label">Original URL</div>
-                      {report.original_url}
+                      <div className="url-entry-col truncate">
+                        <div className="url-entry-label">Original URL</div>
+                        {report.original_url}
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

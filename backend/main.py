@@ -11,7 +11,7 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 import pandas as pd
-from typing import List
+from typing import List, Optional
 
 import base64
 import qrcode
@@ -53,6 +53,8 @@ def get_db():
         db.close()
 
 securityy = HTTPBearer()
+securityy_optional = HTTPBearer(auto_error=False)
+
 
 def generate_short_code(length=6):
     characters = string.ascii_letters + string.digits
@@ -79,6 +81,17 @@ def get_current_admin(
         raise HTTPException(status_code=403, detail="Admin access required")
 
     return user
+
+def get_optional_current_user(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(securityy_optional)
+):
+    if credentials is None:
+        return None
+ 
+    payload = security.verify_Token(credentials.credentials)
+    # An expired/invalid token on an optional-auth route shouldn't block the
+    # request — just treat the caller as anonymous.
+    return payload
 
 
 def generate_qr_base64(data: str) -> str:
@@ -942,41 +955,46 @@ def report_abuse(
     payload: schemas.ReportAbuseRequest,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: Optional[dict] = Depends(get_optional_current_user)
 ):
-    user_id = current_user["user_id"]
-
+    # Anyone can report a link, logged in or not — AbuseReport.user_id is
+    # nullable specifically so anonymous reports have somewhere to land.
+    # Logged-in reporters still get attributed, which is what lets us also
+    # dedupe repeat reports from the same account below.
+    user_id = current_user["user_id"] if current_user else None
+ 
     url = db.query(models.URL).filter(models.URL.short_url == payload.short_url).first()
     if not url:
         raise HTTPException(status_code=404, detail="URL not found")
-
-    existing_report = (
-        db.query(models.AbuseReport)
-        .filter(
-            models.AbuseReport.url_id == url.id,
-            models.AbuseReport.user_id == user_id
+ 
+    if user_id is not None:
+        existing_report = (
+            db.query(models.AbuseReport)
+            .filter(
+                models.AbuseReport.url_id == url.id,
+                models.AbuseReport.user_id == user_id
+            )
+            .first()
         )
-        .first()
-    )
-
-    if existing_report:
-        raise HTTPException(status_code=400, detail="You have already reported this URL")
-
+ 
+        if existing_report:
+            raise HTTPException(status_code=400, detail="You have already reported this URL")
+ 
     new_report = models.AbuseReport(
         url_id=url.id,
         user_id=user_id,
         reason=payload.reason
     )
-
+ 
     db.add(new_report)
     db.commit()
     db.refresh(new_report)
-
+ 
     return schemas.ReportAbuseResponse(
         message="Abuse report submitted successfully",
         abuse_id=new_report.id
     )
-
+ 
 @app.get("/api/get-abuse", response_model=list[schemas.GetAbuseResponse])
 @limiter.limit("2/minute")
 def get_abuse(
@@ -985,14 +1003,14 @@ def get_abuse(
     current_user: dict = Depends(get_current_user)
 ):
     user_id = current_user["user_id"]
-
+ 
     abuse_reports = (
         db.query(models.AbuseReport)
         .filter(models.AbuseReport.user_id == user_id)
         .order_by(models.AbuseReport.id)
         .all()
     )
-
+ 
     result = []
     for report in abuse_reports:
         result.append(
@@ -1004,11 +1022,49 @@ def get_abuse(
                 user_id=report.user_id
             )
         )
-
+ 
     return result
-
-
-
+ 
+ 
+@app.get("/api/admin/abuse-reports", response_model=list[schemas.AdminAbuseReportItem])
+def list_all_abuse_reports(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_admin: models.User = Depends(get_current_admin)
+):
+    reports = (
+        db.query(models.AbuseReport)
+        .order_by(models.AbuseReport.created_at.desc())
+        .all()
+    )
+ 
+    base_url = str(request.base_url).rstrip("/")
+    result = []
+ 
+    for report in reports:
+        url = report.url
+        if url is None:
+            continue
+ 
+        result.append(
+            schemas.AdminAbuseReportItem(
+                abuse_id=report.id,
+                url_id=report.url_id,
+                short_code=url.short_url,
+                short_url=f"{base_url}/{url.short_url}",
+                original_url=url.original_url,
+                reason=report.reason,
+                created_at=report.created_at,
+                reporter_id=report.user_id,
+                reporter_email=report.owner.email if report.owner else None,
+                owner_email=url.owner.email if url.owner else None,
+                url_is_active=url.is_active,
+            )
+        )
+ 
+    return result
+ 
+ 
 @app.post("/api/admin/accept-abuse", response_model=schemas.AcceptAbuseResponse)
 @limiter.limit("2/minute")
 def accept_abuse(
@@ -1020,22 +1076,22 @@ def accept_abuse(
     abuse_report = db.query(models.AbuseReport).filter(
         models.AbuseReport.id == payload.abuse_id
     ).first()
-
+ 
     if not abuse_report:
         raise HTTPException(status_code=404, detail="Abuse report not found")
-
+ 
     url = db.query(models.URL).filter(models.URL.id == abuse_report.url_id).first()
     if not url:
         raise HTTPException(status_code=404, detail="Associated URL not found")
-
+ 
     url.is_active = False
     db.delete(abuse_report)
     db.commit()
-
+ 
     return schemas.AcceptAbuseResponse(
         message="Abuse report accepted and URL disabled successfully"
     )
-
+ 
 @app.post("/api/admin/refuse-abuse", response_model=schemas.RefuseAbuseResponse)
 @limiter.limit("2/minute")
 def refuse_abuse(
@@ -1047,13 +1103,13 @@ def refuse_abuse(
     abuse_report = db.query(models.AbuseReport).filter(
         models.AbuseReport.id == payload.abuse_id
     ).first()
-
+ 
     if not abuse_report:
         raise HTTPException(status_code=404, detail="Abuse report not found")
-
+ 
     db.delete(abuse_report)
     db.commit()
-
+ 
     return schemas.RefuseAbuseResponse(
         message="Abuse report refused successfully"
     )

@@ -8,6 +8,7 @@ import PublicRoute from "../routes/PublicRoute";
 import AdminRoute from "../routes/AdminRoute.js";
 import UrlPassword from "./UrlPassword"
 import AdminDashboard from "./AdminDashboard";
+import Report from "./Report.js";
 
 function App() {
   return (
@@ -46,6 +47,8 @@ function App() {
         }
       />
 
+      <Route path={ROUTES.REPORT} element={<Report />} />
+ 
       <Route path="/protected/:shortCode" element={<UrlPassword />} />
       <Route path="*" element={<Navigate to={ROUTES.AUTH} replace />} />
     </Routes>

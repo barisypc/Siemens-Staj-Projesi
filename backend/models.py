@@ -88,5 +88,4 @@ class AbuseReport(Base):
     url   = relationship("URL", back_populates="reports")
     owner = relationship("User", back_populates="reports")
 
-
-
+ 
